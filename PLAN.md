@@ -17,24 +17,36 @@ renders a value fetched from it; CI green.
 
 ## Phase 1 — Catalog 🔶 · [implementation spec](docs/phase-1.md)
 
-`GET /products` (paginated, reading from the upstream mock catalog) and
-`GET /products/{id}` composing the base product with the enriched description fetched
-from the AI service — the first real service-to-service call.
-*Requires seller:* enriched-detail endpoint exposing the enrichment-store description
-(+ citations) for one `id_product`.
+`GET /products` (paginated) and `GET /products/{id}`, served from the shop's own
+catalog store (`shop.db`), seeded from a checked-in JSON snapshot of the same source
+that feeds the AI service's pipeline. The seller is the AI engine only — it grows no
+shop-facing catalog endpoints.
 
-**Done when:** the full catalog is served through this BFF; the detail response
-carries pipeline-enriched content; client types generated from the emitted OpenAPI.
+*Open question (da valutare):* how catalog records flow between the two services —
+the AI service pushes enriched records here, or this service owns/generates the
+records and feeds them to the AI service for enrichment. Until decided, the seed
+JSON is the only source and there is no service-to-service catalog call.
 
-## Phase 2 — Orders ⬜
+**Done when:** the full catalog is served from the internal store; client types
+generated from the emitted OpenAPI.
 
-`POST /orders` persisting orders to `shop.db` with timestamps, keyed by a
-client-generated `customer_id`; `GET /orders` for a customer's history. Timestamps
-matter: they later let the advisor use real recency ("la settimana scorsa hai
-preso…").
+## Phase 2 — Cart & orders ⬜
 
-**Done when:** checkout from the web app lands an order in `shop.db`; order routes
-covered by tests.
+The commerce core, owned here — the web client renders money, it never computes it.
+Products gain a price (`priceCents`, seeded/persisted in `shop.db`: the upstream
+catalog has none, pricing is this service's domain). Server-side cart per
+client-generated `customerId`: `GET /carts/{customerId}`,
+`PUT /carts/{customerId}/items/{productId}` (body `{ quantity }`, validated) and
+`DELETE` of the same, all returning the full cart with server-computed line/cart
+totals. `POST /orders` builds the order atomically from the stored cart (price
+snapshot, timestamps), clears it and returns the recap; `GET /orders` for a
+customer's history. Timestamps matter: they later let the advisor use real recency
+("la settimana scorsa hai preso…").
+_Decided (was: da valutare):_ carts live server-side, so the customer can leave and
+return to the same cart and the backend can act on it (advisor awareness later).
+
+**Done when:** checkout from the web app lands an order in `shop.db` built from the
+server cart; cart and order routes covered by tests.
 
 ## Phase 3 — Chat proxy ⬜
 

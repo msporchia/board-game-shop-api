@@ -21,13 +21,15 @@ AI to the Python service — so service-to-service calls are real, not diagram f
 ```mermaid
 flowchart LR
     WEB[board-game-shop-web<br/>React + TS] -->|only entry point| SHOP[board-game-shop-api<br/>Node + TS · BFF]
-    SHOP -->|products| MOCK[mock catalog<br/>plays the legacy<br/>commerce platform]
-    SHOP -->|/chat, /search,<br/>enriched detail| API[board-game-rag-seller<br/>Python · AI/RAG]
-    SHOP --> DB[(shop.db<br/>orders, customers)]
+    SHOP -->|/chat, /search| API[board-game-rag-seller<br/>Python · AI/RAG]
+    SHOP --> DB[(shop.db<br/>catalog, orders, customers)]
 ```
 
-- **Products** — composed: base catalog from the upstream mock platform, enriched
-  description fetched from the AI service.
+- **Products** — owned here: a catalog store in `shop.db`, seeded from a checked-in
+  JSON snapshot of the same source that feeds the AI service's pipeline. How records
+  flow between the two services long-term (the AI service pushes enriched records
+  here, or this service feeds its records to the AI for enrichment) is an open
+  question — see [PLAN.md](PLAN.md).
 - **Orders & customers** — owned here (`shop.db`, SQLite), keyed by a client-generated
   `customer_id` (no auth — it's a demo identity).
 - **Chat & search** — proxied to the AI service. The chat proxy is where this service
@@ -47,7 +49,7 @@ versa. Cross-domain needs travel through API calls.
 | Language | TypeScript strict | Contracts as code, mirroring the Python service's Pydantic discipline |
 | Validation | zod on every boundary | Parse, don't validate — inputs and upstream responses |
 | Contracts | OpenAPI emission | The web app generates its client types from this spec; this service generates its AI-service client the same way. No hand-maintained DTO duplicates |
-| Storage | SQLite (`shop.db`) | Consistent with the ecosystem; swappable behind a store class |
+| Storage | SQLite (`shop.db`, via `node:sqlite`) | Consistent with the ecosystem; zero native deps; swappable behind a store class |
 | Tests | Vitest + `fastify.inject` | Route behavior tested against the HTTP contract, no live server |
 
 ## Structure convention

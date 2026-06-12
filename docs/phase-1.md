@@ -1,138 +1,101 @@
 # Phase 1 — Catalog: implementation spec
 
-Goal: serve the full catalog through this BFF. `GET /products` reads the paginated
-list from the upstream mock catalog; `GET /products/{id}` composes the base product
-with the enriched description fetched from the AI service — the first real
-service-to-service call. Conventions in `CLAUDE.md` apply to every file.
+Goal: serve the full catalog through this service. `GET /products` (paginated) and
+`GET /products/{id}`, read from the shop's own catalog store. Conventions in
+`CLAUDE.md` apply to every file.
 
-## 1. Upstream contracts
+> **Revised.** The original draft composed products live from the upstream mock
+> catalog and an AI-service enriched-detail endpoint (see git history). Superseded:
+> the seller is the AI engine only — it grows no shop-facing catalog endpoints. The
+> shop owns its catalog data.
 
-### Mock catalog (`MOCK_CATALOG_URL`, plays the legacy PrestaShop)
+## 1. Data ownership and source
 
-`GET /index.php?fc=module&module=utils&controller=seller&page=N&pageSize=M` →
+The catalog lives in the shop's SQLite database (`shop.db`, same file Phase 2 adds
+orders to), in a `products` table. It is seeded at boot, when empty, from
+`data/sample-catalog.json` — a checked-in snapshot (legacy PrestaShop-shaped
+records) of the same source that feeds the AI service's enrichment pipeline.
 
-```json
-{
-  "products": [
-    {
-      "id_product": 1,
-      "name": "Catan",
-      "content_hash": "…",
-      "description": "…",
-      "source_descriptions": [{ "source": "…", "description": "…" }],
-      "tags": ["…"],
-      "autori": "",
-      "players": [3, 4],
-      "players_display": "3-4",
-      "duration_min": 75,
-      "age_min": 10,
-      "complexity": "Medio",
-      "complexity_level": 2,
-      "year": 1995,
-      "internal_rating": 7.0,
-      "is_expansion": false,
-      "categoria": "Giochi da tavolo",
-      "marca": "KOSMOS",
-      "image": "https://…"
-    }
-  ],
-  "page": 1,
-  "pageSize": 100,
-  "hasNext": false
-}
-```
+**Open question (da valutare, tracked in PLAN.md):** how catalog records flow
+between the two services long-term — the AI service pushes enriched records here,
+or this service owns/generates the records and feeds them to the AI service for
+upgrading. Until decided, the seed JSON is the only source and there is no
+service-to-service catalog call.
 
-There is **no single-product endpoint** upstream: detail lookups scan the paginated
-list (pageSize 100) until the id shows up or `hasNext` is false.
-
-### AI service enriched detail (`SELLER_API_URL`) — agreed contract
-
-`GET /detail/{id_product}` → `200 { "id_product": 1, "description": "…",
-"citations": [{ "source": "…", "url": "…" }] }`, `404` when the product has no
-enrichment. **Not implemented seller-side yet** (tracked in that repo's plan); this
-service codes against the contract and degrades gracefully meanwhile.
+Driver: `node:sqlite` (`DatabaseSync`) — in the platform, zero native deps;
+experimental in Node 22 but API-frozen enough for this demo, and swappable behind
+the store class per the README's storage rationale.
 
 ## 2. This service's API
 
-Upstream legacy names are translated at the client boundary — nothing downstream
-sees `id_product` or `marca`. Product model (camelCase): `id`, `name`,
-`description`, `tags`, `authors`, `players`, `playersDisplay`, `durationMin`,
-`ageMin`, `complexity`, `complexityLevel`, `year`, `rating`, `isExpansion`,
-`category`, `brand`, `image`. (`content_hash` and `source_descriptions` are ingest
-concerns — dropped.)
+Legacy source names are translated at the seed boundary — nothing downstream sees
+`id_product` or `marca`. Product model (camelCase): `id`, `name`, `description`,
+`tags`, `authors`, `players`, `playersDisplay`, `durationMin`, `ageMin`,
+`complexity`, `complexityLevel`, `year`, `rating`, `isExpansion`, `category`,
+`brand`, `image`. (`content_hash` and `source_descriptions` are pipeline concerns —
+dropped at seed time.)
 
 - `GET /products?page&pageSize` — page ≥ 1 (default 1), 1 ≤ pageSize ≤ 100
-  (default 24). → `200 { products, page, pageSize, hasNext }`, `502` when the
-  catalog upstream fails.
-- `GET /products/{id}` — → `200` product + `enrichment: { description, citations }
-| null`, `404 { error, message }` for an unknown id, `502` when the catalog
-  upstream fails. Enrichment is decoration, not a dependency: AI service down or
-  404 → `enrichment: null`, never a 5xx.
+  (default 24). → `200 { products, page, pageSize, hasNext }`, ordered by `id`.
+- `GET /products/{id}` — → `200` product, `404 { error, message }` for an unknown
+  id.
 
-Every non-2xx body is `{ error, message }` (`error`: `not_found` | `bad_gateway`).
+Every non-2xx body is `{ error, message }`.
 
 ## 3. Source files
 
-- `src/core/fetch_fn.ts` — `FetchFn` type (`typeof globalThis.fetch`); the
-  injectable I/O seam of every HTTP client.
-- `src/core/upstream_error.ts` — `UpstreamError` (upstream name, message, optional
-  status): network failure, unexpected status, or payload that fails zod parsing.
+- `src/core/config.ts` — drops `mockCatalogUrl`; gains `dbPath` (default
+  `./shop.db`, env `DB_PATH`, `:memory:` in tests) and `catalogSeedPath` (default
+  `./data/sample-catalog.json`, env `CATALOG_SEED_PATH`). Keeps `sellerApiUrl` for
+  the Phase 3 chat proxy.
 - `src/core/error_response.ts` — `errorResponseSchema`, the shared non-2xx body.
 - `src/catalog/product.ts` — zod schemas + types of the outbound catalog model:
-  `productSchema`, `productPageSchema`, `productDetailSchema`, `enrichmentSchema`.
-- `src/catalog/mock_catalog_client.ts` — `MockCatalogClient(baseUrl, fetchFn)`:
-  `listPage(page, pageSize)`. Owns the upstream wire schema and the legacy→domain
-  translation.
-- `src/catalog/enrichment_client.ts` — `EnrichmentClient(baseUrl, fetchFn)`:
-  `getEnrichment(id)` → `Enrichment | null` (404 → null; anything else broken →
-  `UpstreamError`).
-- `src/catalog/catalog_service.ts` — `CatalogService(catalogClient,
-enrichmentClient)`: `listProducts` delegates; `getProduct` runs catalog scan and
-  enrichment fetch concurrently, swallows enrichment `UpstreamError` into `null`,
-  propagates catalog failures, returns `null` for unknown ids.
-- `src/catalog/catalog_routes.ts` — `CatalogRoutes(service)`: the two routes above,
+  `productSchema`, `productPageSchema`.
+- `src/catalog/catalog_store.ts` — `CatalogStore(dbPath)`: owns the SQLite handle
+  and the `products` table (created on construction; arrays stored as JSON text).
+  `count()`, `insertMany(products)`, `listPage(page, pageSize)`, `getById(id)`,
+  `close()`.
+- `src/catalog/catalog_seeder.ts` — `CatalogSeeder(store, seedPath)`:
+  `seedIfEmpty()` reads the JSON snapshot, zod-parses the legacy records, translates
+  them to the domain model, bulk-inserts. No-op when the store already has rows.
+  Owns the legacy wire schema and the legacy→domain translation.
+- `src/catalog/catalog_routes.ts` — `CatalogRoutes(store)`: the two routes above,
   zod schemas on querystring/params/responses so they land in the OpenAPI spec.
-- `src/core/app_factory.ts` — gains an injectable `fetchFn` (default global fetch),
-  wires clients → service → routes, and sets the app error handler mapping
-  `UpstreamError` → `502 { error: 'bad_gateway' }` (anything else falls through to
-  Fastify's default).
+- `src/core/app_factory.ts` — wires store → seeder (run at create) → routes, closes
+  the store on app close. The Phase-1-draft HTTP-client machinery (`FetchFn`,
+  `UpstreamError`, the 502 mapping) is deleted with its clients; Phase 3 re-adds
+  what the chat proxy needs.
 
 ## 4. Tests
 
-Network is the only fake: tests build real clients (and, for routes, the real app
-via `AppFactory` + default `Config`) over a faked `fetch`.
+The store runs on `:memory:`; the seeder reads a small checked-in fixture. Route
+tests build the real app via `AppFactory` + a `Config` pointing at both.
 
-- `tests/support/fake_fetch.ts` — `fakeFetch(handler)`, `jsonResponse(body,
-status)`, `fakeUpstreams({ catalog, seller })` discriminating on the default
-  config hostnames; an omitted upstream behaves as down.
-- `tests/support/catalog_fixtures.ts` — raw upstream product/page builders.
-- `tests/catalog/mock_catalog_client/list_page.test.ts` — pagination params on the
-  wire, legacy→domain field mapping, non-200 → `UpstreamError`, malformed payload →
-  `UpstreamError`.
-- `tests/catalog/enrichment_client/get_enrichment.test.ts` — 200 parsed, 404 →
-  null, 500/network failure → `UpstreamError`.
-- `tests/catalog/catalog_service/list_products.test.ts` — delegation.
-- `tests/catalog/catalog_service/get_product.test.ts` — composition, multi-page
-  scan, unknown id → null, enrichment failure degrades to null, catalog failure
-  propagates.
-- `tests/catalog/catalog_routes/get_products.test.ts` — 200 mapped body, defaults
-  and explicit pagination forwarded upstream, invalid params → 400, upstream down →
-  502, `/products` paths present in `/docs/json`.
-- `tests/catalog/catalog_routes/get_product_by_id.test.ts` — 200 with enrichment,
-  enrichment-down → 200 with null, unknown id → 404, invalid id → 400, catalog
-  down → 502.
+- `tests/support/catalog_seed.fixture.json` — three legacy-shaped games.
+- `tests/catalog/catalog_store/` — `listPage` (ordering, pagination, `hasNext`),
+  `getById` (hit, miss), `insertMany`/`count` round-trip.
+- `tests/catalog/catalog_seeder/seed_if_empty.test.ts` — seeds with legacy→domain
+  mapping, no-op on a non-empty store, throws on a malformed snapshot.
+- `tests/catalog/catalog_routes/get_products.test.ts` — 200 translated body,
+  default and explicit pagination, invalid params → 400, catalog routes present in
+  `/docs/json`.
+- `tests/catalog/catalog_routes/get_product_by_id.test.ts` — 200, unknown id →
+  404, non-numeric id → 400.
 
 ## 5. Housekeeping
 
-PLAN.md: flip Phase 1 ⬜ → 🔶 and link this spec.
+- `data/sample-catalog.json` copied from the seller repo's mock fixture.
+- `.env.example`, `docker-compose.yml`: drop `MOCK_CATALOG_URL`; document
+  `DB_PATH`.
+- README: architecture diagram and "products" bullet reflect catalog ownership;
+  PLAN.md Phase 1 rewritten accordingly (stays 🔶 until the web slice is done).
 
 ## Verification checklist (all must pass)
 
 1. `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test` green.
-2. With the seller stack up: `curl localhost:3000/products` serves the mock
-   catalog through the BFF; `/products/1` returns the composed detail
-   (`enrichment` null until the seller endpoint ships).
-3. With the stack down: `/health` still 200, `/products` → 502 with the error
-   body, `/products/1` → 502.
-4. `/docs/json` documents `/products` and `/products/{id}` with the zod-derived
+2. `npm run build`, then `node dist/main.js` on a fresh checkout state: first boot
+   seeds `shop.db` from the snapshot; `curl localhost:3000/products` serves the
+   full catalog; `/products/1` returns Catan; `/products/9999` → 404; a second
+   boot does not duplicate rows.
+3. `/docs/json` documents `/products` and `/products/{id}` with the zod-derived
    schemas.

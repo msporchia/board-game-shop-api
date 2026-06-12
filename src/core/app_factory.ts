@@ -9,28 +9,21 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { CatalogRoutes } from '../catalog/catalog_routes.js';
-import { CatalogService } from '../catalog/catalog_service.js';
-import { EnrichmentClient } from '../catalog/enrichment_client.js';
-import { MockCatalogClient } from '../catalog/mock_catalog_client.js';
+import { CatalogSeeder } from '../catalog/catalog_seeder.js';
+import { CatalogStore } from '../catalog/catalog_store.js';
 import { HealthRoutes } from '../health/health_routes.js';
 import { Config } from './config.js';
-import type { FetchFn } from './fetch_fn.js';
-import { UpstreamError } from './upstream_error.js';
 
 /**
  * Composition of the Fastify application.
  *
  * Wires the zod type provider (so route schemas drive both validation and the
- * emitted OpenAPI document), CORS, Swagger + Swagger UI, the app-level error
- * mapping (UpstreamError → 502), and the domain route classes. Holds no
- * request-handling logic itself. `fetchFn` is the network seam: tests inject a
- * fake and exercise the real wiring underneath.
+ * emitted OpenAPI document), CORS, Swagger + Swagger UI, the owned stores
+ * (opened here, seeded when empty, closed with the app), and the domain route
+ * classes. Holds no request-handling logic itself.
  */
 export class AppFactory {
-  constructor(
-    private readonly config: Config,
-    private readonly fetchFn: FetchFn = globalThis.fetch,
-  ) {}
+  constructor(private readonly config: Config) {}
 
   /**
    * Async because the swagger plugin must be fully loaded (its onRoute hook
@@ -61,21 +54,17 @@ export class AppFactory {
 
     await app.register(swaggerUi, { routePrefix: '/docs' });
 
-    app.setErrorHandler((err, request, reply) => {
-      if (err instanceof UpstreamError) {
-        request.log.error({ err }, 'upstream failure');
-        return reply.code(502).send({ error: 'bad_gateway', message: err.message });
-      }
-      return reply.send(err);
+    const catalogStore = new CatalogStore(this.config.dbPath);
+    app.addHook('onClose', () => {
+      catalogStore.close();
     });
-
-    const catalogService = new CatalogService(
-      new MockCatalogClient(this.config.mockCatalogUrl, this.fetchFn),
-      new EnrichmentClient(this.config.sellerApiUrl, this.fetchFn),
-    );
+    const { seeded } = new CatalogSeeder(catalogStore, this.config.catalogSeedPath).seedIfEmpty();
+    if (seeded > 0) {
+      app.log.info({ seeded }, 'catalog seeded from snapshot');
+    }
 
     new HealthRoutes().register(app);
-    new CatalogRoutes(catalogService).register(app);
+    new CatalogRoutes(catalogStore).register(app);
 
     return app;
   }

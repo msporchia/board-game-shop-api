@@ -5,7 +5,8 @@ const configSchema = z.object({
   host: z.string().min(1).default('0.0.0.0'),
   corsOrigin: z.string().min(1).default('http://localhost:5173'),
   sellerApiUrl: z.string().url().default('http://seller-api:8000'),
-  mockCatalogUrl: z.string().url().default('http://mock-prestashop:8001'),
+  dbPath: z.string().min(1).default('./shop.db'),
+  catalogSeedPath: z.string().min(1).default('./data/sample-catalog.json'),
 });
 
 /**
@@ -19,14 +20,16 @@ export class Config {
   readonly host: string;
   readonly corsOrigin: string;
   readonly sellerApiUrl: string;
-  readonly mockCatalogUrl: string;
+  readonly dbPath: string;
+  readonly catalogSeedPath: string;
 
   private constructor(values: z.infer<typeof configSchema>) {
     this.port = values.port;
     this.host = values.host;
     this.corsOrigin = values.corsOrigin;
     this.sellerApiUrl = values.sellerApiUrl;
-    this.mockCatalogUrl = values.mockCatalogUrl;
+    this.dbPath = values.dbPath;
+    this.catalogSeedPath = values.catalogSeedPath;
   }
 
   static fromEnv(env: NodeJS.ProcessEnv): Config {
@@ -35,7 +38,8 @@ export class Config {
       host: env.HOST,
       corsOrigin: env.CORS_ORIGIN,
       sellerApiUrl: env.SELLER_API_URL,
-      mockCatalogUrl: env.MOCK_CATALOG_URL,
+      dbPath: env.DB_PATH,
+      catalogSeedPath: env.CATALOG_SEED_PATH,
     });
     return new Config(values);
   }

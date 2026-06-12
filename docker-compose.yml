@@ -9,7 +9,6 @@ services:
       - /app/node_modules
     environment:
       SELLER_API_URL: http://seller-api:8000
-      MOCK_CATALOG_URL: http://mock-prestashop:8001
     networks:
       - default
       # The Python stack's network. /health has no upstream dependency, so this

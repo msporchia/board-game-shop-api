@@ -2,19 +2,9 @@ import { z } from 'zod';
 
 /**
  * Outbound catalog model — this service's API contract, from which the web
- * client generates its types. Upstream legacy names (`id_product`, `marca`,
- * `categoria`, …) are translated at the client boundary and never leak here.
+ * client generates its types. The legacy source names (`id_product`, `marca`,
+ * `categoria`, …) are translated at the seed boundary and never leak here.
  */
-
-export const enrichmentCitationSchema = z.object({
-  source: z.string(),
-  url: z.string().optional(),
-});
-
-export const enrichmentSchema = z.object({
-  description: z.string(),
-  citations: z.array(enrichmentCitationSchema),
-});
 
 export const productSchema = z.object({
   id: z.number().int(),
@@ -43,12 +33,5 @@ export const productPageSchema = z.object({
   hasNext: z.boolean(),
 });
 
-/** Detail = base product + enrichment from the AI service (null when absent). */
-export const productDetailSchema = productSchema.extend({
-  enrichment: enrichmentSchema.nullable(),
-});
-
-export type Enrichment = z.infer<typeof enrichmentSchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductPage = z.infer<typeof productPageSchema>;
-export type ProductDetail = z.infer<typeof productDetailSchema>;

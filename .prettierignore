@@ -7,3 +7,5 @@ PLAN.md
 dist/
 coverage/
 node_modules/
+# Verbatim snapshot of the seller repo's mock fixture — kept byte-identical for diffability.
+data/sample-catalog.json

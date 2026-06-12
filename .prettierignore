@@ -1,0 +1,9 @@
+# Authored prose docs: their Markdown table/emphasis style is intentional and
+# pre-dates this scaffold — keep them out of the formatter's reach.
+README.md
+PLAN.md
+
+# Generated / vendored
+dist/
+coverage/
+node_modules/

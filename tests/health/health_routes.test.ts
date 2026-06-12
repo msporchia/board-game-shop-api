@@ -7,7 +7,7 @@ describe('HealthRoutes', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = new AppFactory(Config.fromEnv({})).create();
+    app = await new AppFactory(Config.fromEnv({})).create();
     await app.ready();
   });
 

@@ -15,7 +15,7 @@ CI: lint + tests.
 **Done when:** `/health` responds through the compose stack and the web placeholder
 renders a value fetched from it; CI green.
 
-## Phase 1 — Catalog ⬜
+## Phase 1 — Catalog 🔶 · [implementation spec](docs/phase-1.md)
 
 `GET /products` (paginated, reading from the upstream mock catalog) and
 `GET /products/{id}` composing the base product with the enriched description fetched

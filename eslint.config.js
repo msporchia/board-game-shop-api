@@ -15,7 +15,7 @@ export default tseslint.config(
   {
     // Test and config files are not part of the build tsconfig's `include`,
     // so type-aware linting uses the default project service for them.
-    files: ['**/*.test.ts', '*.config.{js,ts}', 'eslint.config.js'],
+    files: ['tests/**/*.ts', '*.config.{js,ts}', 'eslint.config.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
   eslintConfigPrettier,

@@ -7,7 +7,7 @@ import { AppFactory } from './core/app_factory.js';
  */
 async function main(): Promise<void> {
   const config = Config.fromEnv(process.env);
-  const app = new AppFactory(config).create();
+  const app = await new AppFactory(config).create();
 
   try {
     await app.listen({ port: config.port, host: config.host });

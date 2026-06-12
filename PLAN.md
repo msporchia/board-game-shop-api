@@ -30,7 +30,7 @@ JSON is the only source and there is no service-to-service catalog call.
 **Done when:** the full catalog is served from the internal store; client types
 generated from the emitted OpenAPI.
 
-## Phase 2 — Cart & orders ⬜
+## Phase 2 — Cart & orders 🔶 · [implementation spec](docs/phase-2.md)
 
 The commerce core, owned here — the web client renders money, it never computes it.
 Products gain a price (`priceCents`, seeded/persisted in `shop.db`: the upstream

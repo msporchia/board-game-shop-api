@@ -1,20 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { AppFactory } from '../../../src/core/app_factory.js';
-import { Config } from '../../../src/core/config.js';
+import { buildApp } from '../../support/build_app.js';
 
 describe('CatalogRoutes GET /products', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    // Real app over an in-memory store seeded from the checked-in fixture.
-    app = await new AppFactory(
-      Config.fromEnv({
-        DB_PATH: ':memory:',
-        CATALOG_SEED_PATH: 'tests/support/catalog_seed.fixture.json',
-      }),
-    ).create();
-    await app.ready();
+    app = await buildApp();
   });
 
   afterAll(async () => {
@@ -33,7 +25,7 @@ describe('CatalogRoutes GET /products', () => {
     }>();
     expect(body).toMatchObject({ page: 1, pageSize: 24, hasNext: false });
     expect(body.products.map((p) => p['name'])).toEqual(['Catan', 'Carcassonne', 'Azul']);
-    expect(body.products[0]).toMatchObject({ id: 1, brand: 'KOSMOS', tags: expect.any(Array) });
+    expect(body.products[0]).toMatchObject({ id: 1, brand: 'KOSMOS', priceCents: 3650 });
     expect(body.products[0]).not.toHaveProperty('id_product');
   });
 

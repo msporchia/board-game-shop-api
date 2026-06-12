@@ -20,6 +20,7 @@ export function product(overrides: Partial<Product> = {}): Product {
     category: 'Giochi da tavolo',
     brand: 'KOSMOS',
     image: 'https://img.gamenest.example/1.jpg',
+    priceCents: 3650,
     ...overrides,
   };
 }

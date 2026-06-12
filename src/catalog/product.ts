@@ -24,6 +24,7 @@ export const productSchema = z.object({
   category: z.string(),
   brand: z.string(),
   image: z.string(),
+  priceCents: z.number().int(),
 });
 
 export const productPageSchema = z.object({

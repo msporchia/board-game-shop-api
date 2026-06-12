@@ -1,19 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { AppFactory } from '../../../src/core/app_factory.js';
-import { Config } from '../../../src/core/config.js';
+import { buildApp } from '../../support/build_app.js';
 
 describe('CatalogRoutes GET /products/:id', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = await new AppFactory(
-      Config.fromEnv({
-        DB_PATH: ':memory:',
-        CATALOG_SEED_PATH: 'tests/support/catalog_seed.fixture.json',
-      }),
-    ).create();
-    await app.ready();
+    app = await buildApp();
   });
 
   afterAll(async () => {
@@ -29,6 +22,7 @@ describe('CatalogRoutes GET /products/:id', () => {
       name: 'Azul',
       brand: 'Plan B Games',
       players: [2, 3, 4],
+      priceCents: 2600,
     });
   });
 

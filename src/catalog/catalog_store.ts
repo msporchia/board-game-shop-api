@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import type { Database } from '../core/database.js';
 import type { Product, ProductPage } from './product.js';
 
 interface ProductRow {
@@ -19,6 +19,7 @@ interface ProductRow {
   category: string;
   brand: string;
   image: string;
+  price_cents: number;
 }
 
 function toProduct(row: ProductRow): Product {
@@ -40,21 +41,18 @@ function toProduct(row: ProductRow): Product {
     category: row.category,
     brand: row.brand,
     image: row.image,
+    priceCents: row.price_cents,
   };
 }
 
 /**
  * SQLite-backed catalog store — the shop owns its catalog data (see
- * docs/phase-1.md). Owns the database handle and the `products` table; array
- * fields are stored as JSON text. `node:sqlite` keeps the dependency tree
- * native-free and stays swappable behind this class.
+ * docs/phase-1.md). Owns the `products` table on the shared database; array
+ * fields are stored as JSON text.
  */
 export class CatalogStore {
-  private readonly db: DatabaseSync;
-
-  constructor(dbPath: string) {
-    this.db = new DatabaseSync(dbPath);
-    this.db.exec(`
+  constructor(private readonly db: Database) {
+    this.db.handle.exec(`
       CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
@@ -72,26 +70,28 @@ export class CatalogStore {
         is_expansion INTEGER NOT NULL,
         category TEXT NOT NULL,
         brand TEXT NOT NULL,
-        image TEXT NOT NULL
+        image TEXT NOT NULL,
+        price_cents INTEGER NOT NULL
       )
     `);
   }
 
   count(): number {
-    const row = this.db.prepare('SELECT COUNT(*) AS n FROM products').get() as { n: number };
+    const row = this.db.handle.prepare('SELECT COUNT(*) AS n FROM products').get() as {
+      n: number;
+    };
     return row.n;
   }
 
   insertMany(products: Product[]): void {
-    const insert = this.db.prepare(`
+    const insert = this.db.handle.prepare(`
       INSERT INTO products (
         id, name, description, tags, authors, players, players_display,
         duration_min, age_min, complexity, complexity_level, year, rating,
-        is_expansion, category, brand, image
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_expansion, category, brand, image, price_cents
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    this.db.exec('BEGIN');
-    try {
+    this.db.transaction(() => {
       for (const product of products) {
         insert.run(
           product.id,
@@ -111,18 +111,15 @@ export class CatalogStore {
           product.category,
           product.brand,
           product.image,
+          product.priceCents,
         );
       }
-      this.db.exec('COMMIT');
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
+    });
   }
 
   listPage(page: number, pageSize: number): ProductPage {
     // Fetch one extra row: its presence answers `hasNext` without a COUNT.
-    const rows = this.db
+    const rows = this.db.handle
       .prepare('SELECT * FROM products ORDER BY id LIMIT ? OFFSET ?')
       .all(pageSize + 1, (page - 1) * pageSize) as unknown as ProductRow[];
     return {
@@ -134,13 +131,9 @@ export class CatalogStore {
   }
 
   getById(id: number): Product | null {
-    const row = this.db.prepare('SELECT * FROM products WHERE id = ?').get(id) as
+    const row = this.db.handle.prepare('SELECT * FROM products WHERE id = ?').get(id) as
       | ProductRow
       | undefined;
     return row ? toProduct(row) : null;
-  }
-
-  close(): void {
-    this.db.close();
   }
 }

@@ -1,16 +1,22 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CatalogStore } from '../../../src/catalog/catalog_store.js';
+import { Database } from '../../../src/core/database.js';
 import { product } from '../../support/products.js';
 
 describe('CatalogStore.listPage', () => {
+  let db: Database;
   let store: CatalogStore;
 
+  beforeEach(() => {
+    db = new Database(':memory:');
+    store = new CatalogStore(db);
+  });
+
   afterEach(() => {
-    store.close();
+    db.close();
   });
 
   it('pages through products ordered by id and reports hasNext', () => {
-    store = new CatalogStore(':memory:');
     store.insertMany([
       product({ id: 5, name: 'Azul' }),
       product({ id: 1, name: 'Catan' }),
@@ -27,7 +33,6 @@ describe('CatalogStore.listPage', () => {
   });
 
   it('round-trips the full product shape, arrays included', () => {
-    store = new CatalogStore(':memory:');
     const catan = product();
     store.insertMany([catan]);
 
@@ -35,7 +40,6 @@ describe('CatalogStore.listPage', () => {
   });
 
   it('returns an empty page beyond the data', () => {
-    store = new CatalogStore(':memory:');
     store.insertMany([product()]);
 
     expect(store.listPage(2, 24)).toEqual({ products: [], page: 2, pageSize: 24, hasNext: false });

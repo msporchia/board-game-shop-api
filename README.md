@@ -1,7 +1,9 @@
 # board-game-shop-api — commerce backend (Node + TypeScript)
 
-> 🚧 Planning stage. This repo will host the shop's backend service; for now it holds
-> the service's intent and plan. See [PLAN.md](PLAN.md) for the phased roadmap.
+> Portfolio slice: a Node + TypeScript commerce BFF for the board-game storefront.
+> The catalog, server-side cart and checkout flow are implemented and tested; the
+> first AI-facing `/chat` proxy is in place; the remaining showcase work is generated
+> web contracts, `/search`, purchase-history personalization and final polish.
 
 The commerce backend of a small board-game e-commerce demo: products, orders,
 customers — and the **BFF** (backend-for-frontend) in front of an AI advisor service.
@@ -12,6 +14,19 @@ It is one of three repositories that together form the storefront system:
 | [board-game-rag-seller](https://github.com/msporchia/board-game-rag-seller) | Python AI/RAG service — enrichment pipeline, hybrid search, conversational advisor (LangChain/LangGraph, Qdrant, Ollama) |
 | **board-game-shop-api** (this repo) | Node commerce backend and BFF — products, orders, customers |
 | [board-game-shop-web](https://github.com/msporchia/board-game-shop-web) | React storefront UI |
+
+## Why this repo exists
+
+The AI/RAG repo is the main research piece; this service is the deliberately
+production-shaped Node/TypeScript slice around it. Its job is to show that the
+system is not only a model demo:
+
+- browser traffic enters through a typed BFF, not directly through the AI service;
+- commerce data has a real owner: catalog, prices, carts, orders and history live here;
+- every boundary is parsed at runtime, not trusted because TypeScript says so;
+- the React app can consume emitted OpenAPI contracts instead of hand-maintained DTOs;
+- the most interesting AI behavior comes from composition: the BFF injects real
+  purchase history while the AI service stays ignorant of customer identity.
 
 ## The role this service plays
 
@@ -32,14 +47,38 @@ flowchart LR
   question — see [PLAN.md](PLAN.md).
 - **Orders & customers** — owned here (`shop.db`, SQLite), keyed by a client-generated
   `customer_id` (no auth — it's a demo identity).
-- **Chat & search** — proxied to the AI service. The chat proxy is where this service
-  earns its BFF title: it injects the customer's **purchase history**
-  (`customer_context`) into the chat request, enabling cross-session personalization
-  ("buongiorno, ti sei divertito con Azul?") while the AI service stays ignorant of
+- **Chat & search** — the next BFF slice: proxy the AI service, validate its responses,
+  adapt contracts for the browser and inject the customer's **purchase history**
+  (`customer_context`) into chat requests. That is where this repo earns its BFF
+  title: cross-session personalization while the AI service stays ignorant of
   customer identity.
 
 Database-per-service: this service never reads the AI service's stores, and vice
 versa. Cross-domain needs travel through API calls.
+
+## Current status
+
+Implemented in this repo:
+
+- Fastify app composition with Zod validation and OpenAPI emission.
+- `GET /health`.
+- `GET /products` and `GET /products/{id}` from the owned SQLite catalog.
+- Catalog seeding from a legacy-shaped JSON snapshot.
+- Server-side carts with server-computed money.
+- Transactional checkout into order snapshots.
+- Order history by customer.
+- First `POST /chat` BFF proxy: browser-facing request, seller-facing call, seller
+  response validation and buyable card enrichment from the shop catalog.
+- `customer_context` injection from shop-owned order history: owned product ids and
+  recent order summaries are built server-side, not accepted from the browser.
+- Vitest coverage for config, stores, services and HTTP routes via `fastify.inject`.
+
+Still intentionally open for the showcase:
+
+- generated API types consumed by `board-game-shop-web`;
+- seller-side use of `customer_context` for grounded personalization;
+- `/search` passthrough to `board-game-rag-seller`;
+- README screenshots/GIF once the chat-to-cart loop exists in the web app.
 
 ## Stack
 
@@ -47,10 +86,16 @@ versa. Cross-domain needs travel through API calls.
 |---|---|---|
 | Runtime | Node 22 + Fastify | Modern, lean; the service's discipline is hand-applied, not framework-imposed (NestJS was the considered alternative) |
 | Language | TypeScript strict | Contracts as code, mirroring the Python service's Pydantic discipline |
-| Validation | zod on every boundary | Parse, don't validate — inputs and upstream responses |
-| Contracts | OpenAPI emission | The web app generates its client types from this spec; this service generates its AI-service client the same way. No hand-maintained DTO duplicates |
+| Validation | Zod on every boundary | Parse untrusted data at runtime: HTTP inputs, env vars, seed files and future upstream AI responses |
+| Contracts | OpenAPI emission | Route schemas emit the browser-facing contract; generated web types are the next showcase milestone |
 | Storage | SQLite (`shop.db`, via `node:sqlite`) | Consistent with the ecosystem; zero native deps; swappable behind a store class |
 | Tests | Vitest + `fastify.inject` | Route behavior tested against the HTTP contract, no live server |
+
+## Showcase plan
+
+- Repo coordination: [docs/cross-repo-showcase-plan.md](docs/cross-repo-showcase-plan.md).
+- This repo's active checklist: [docs/showcase-checklist.md](docs/showcase-checklist.md).
+- Phased roadmap: [PLAN.md](PLAN.md).
 
 ## Structure convention
 

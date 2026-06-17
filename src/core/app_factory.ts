@@ -14,6 +14,8 @@ import { CatalogStore } from '../catalog/catalog_store.js';
 import { CartRoutes } from '../carts/cart_routes.js';
 import { CartService } from '../carts/cart_service.js';
 import { CartStore } from '../carts/cart_store.js';
+import { ChatRoutes } from '../chat/chat_routes.js';
+import { ChatService } from '../chat/chat_service.js';
 import { HealthRoutes } from '../health/health_routes.js';
 import { OrderRoutes } from '../orders/order_routes.js';
 import { OrderService } from '../orders/order_service.js';
@@ -30,7 +32,10 @@ import { Database } from './database.js';
  * classes. Holds no request-handling logic itself.
  */
 export class AppFactory {
-  constructor(private readonly config: Config) {}
+  constructor(
+    private readonly config: Config,
+    private readonly dependencies: { fetch?: typeof fetch } = {},
+  ) {}
 
   /**
    * Async because the swagger plugin must be fully loaded (its onRoute hook
@@ -76,11 +81,18 @@ export class AppFactory {
     const cartService = new CartService(cartStore, catalogStore);
     const orderStore = new OrderStore(database);
     const orderService = new OrderService(database, cartService, cartStore, orderStore);
+    const chatService = new ChatService(
+      this.config.sellerApiUrl,
+      catalogStore,
+      orderService,
+      this.dependencies.fetch,
+    );
 
     new HealthRoutes().register(app);
     new CatalogRoutes(catalogStore).register(app);
     new CartRoutes(cartService).register(app);
     new OrderRoutes(orderService).register(app);
+    new ChatRoutes(chatService).register(app);
 
     return app;
   }

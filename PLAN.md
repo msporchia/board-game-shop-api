@@ -15,6 +15,9 @@ Working documents:
 - Cross-repo plan: [docs/cross-repo-showcase-plan.md](docs/cross-repo-showcase-plan.md).
 - This repo's active checklist: [docs/showcase-checklist.md](docs/showcase-checklist.md).
 
+The old Phase 0/1/2 implementation specs were removed after completion; this file is
+the active roadmap.
+
 ## Current local state
 
 Implemented locally: Fastify scaffold, config validation, OpenAPI emission, owned
@@ -26,7 +29,7 @@ turning this from a good backend demo into the BFF slice of the full showcase:
 real-stack contract verification with the web app, seller-side context usage,
 `/search` and final docs/polish.
 
-## Phase 0 — Scaffold 🔶 · [implementation spec](docs/phase-0.md)
+## Phase 0 — Scaffold 🔶
 
 Fastify + TypeScript strict, zod, OpenAPI emission, Vitest, ESLint + Prettier (config
 aligned with web). Dockerfile + dev compose service joining the seller stack network.
@@ -37,7 +40,7 @@ CI: lint + tests.
 **Done when:** `/health` responds through the compose stack and the web placeholder
 renders a value fetched from it; CI green.
 
-## Phase 1 — Catalog 🔶 · [implementation spec](docs/phase-1.md)
+## Phase 1 — Catalog 🔶
 
 `GET /products` (paginated) and `GET /products/{id}`, served from the shop's own
 catalog store (`shop.db`), seeded from a checked-in JSON snapshot of the same source
@@ -56,7 +59,7 @@ verification remains part of the showcase hardening.
 **Done when:** the full catalog is served from the internal store; client types
 generated from the emitted OpenAPI.
 
-## Phase 2 — Cart & orders 🔶 · [implementation spec](docs/phase-2.md)
+## Phase 2 — Cart & orders 🔶
 
 The commerce core, owned here — the web client renders money, it never computes it.
 Products gain a price (`priceCents`, seeded/persisted in `shop.db`: the upstream

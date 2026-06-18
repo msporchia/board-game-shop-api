@@ -34,7 +34,7 @@ describe('CartRoutes', () => {
       payload: { quantity: 2 },
     });
     expect(first.statusCode).toBe(200);
-    // Catan is seeded at 36.50 € (see the pricing rule in docs/phase-2.md).
+    // Catan is seeded at 36.50 € by the deterministic demo pricing rule.
     expect(first.json()).toMatchObject({
       customerId: 'alice',
       totalCents: 7300,

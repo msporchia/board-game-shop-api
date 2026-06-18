@@ -26,9 +26,9 @@ const seedProductSchema = z.object({
 const seedSchema = z.array(seedProductSchema);
 
 /**
- * The snapshot carries no price — pricing is this service's domain (see
- * docs/phase-2.md). Deterministic demo rule derived from the game's own
- * fields, so reseeding always reproduces the same catalog.
+ * The snapshot carries no price — pricing is this service's domain. Deterministic
+ * demo rule derived from the game's own fields, so reseeding always reproduces the
+ * same catalog.
  */
 function demoPriceCents(raw: z.infer<typeof seedProductSchema>): number {
   return 1500 + raw.complexity_level * 700 + raw.duration_min * 10;

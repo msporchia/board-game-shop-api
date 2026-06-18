@@ -46,9 +46,8 @@ function toProduct(row: ProductRow): Product {
 }
 
 /**
- * SQLite-backed catalog store — the shop owns its catalog data (see
- * docs/phase-1.md). Owns the `products` table on the shared database; array
- * fields are stored as JSON text.
+ * SQLite-backed catalog store — the shop owns its catalog data. Owns the `products`
+ * table on the shared database; array fields are stored as JSON text.
  */
 export class CatalogStore {
   constructor(private readonly db: Database) {

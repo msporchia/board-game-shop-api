@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../support/build_app.js';
 
+const headers = (customerId: string) => ({ 'x-customer-id': customerId });
+
 describe('ChatRoutes', () => {
   let app: FastifyInstance;
   const calls: Array<{ url: string; body: unknown }> = [];
@@ -15,7 +17,7 @@ describe('ChatRoutes', () => {
         });
         return Response.json({
           message: 'Pandemic è una buona scelta cooperativa.',
-          games: [{ id: 1 }, { id: 999 }],
+          games: [{ id_product: 1 }, { id_product: 999 }],
           quick_replies: ['max 45 minuti', 'piu leggero'],
         });
       },
@@ -30,8 +32,8 @@ describe('ChatRoutes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/chat',
+      headers: headers('alice'),
       payload: {
-        customerId: 'alice',
         sessionId: 'session-1',
         message: 'Cerco un cooperativo per due',
         choices: ['max 45 minuti'],
@@ -49,8 +51,9 @@ describe('ChatRoutes', () => {
           choices: ['max 45 minuti'],
           k: 4,
           customer_context: {
-            owned_product_ids: [],
-            recent_orders: [],
+            received_products: [],
+            sent_products: [],
+            cart_products: [],
           },
         },
       },
@@ -72,14 +75,14 @@ describe('ChatRoutes', () => {
     });
   });
 
-  it('builds customer_context from shop-owned order history, not from the browser payload', async () => {
+  it('builds customer_context from shop-owned state, not from the browser payload', async () => {
     const contextCalls: Array<{ body: Record<string, unknown> }> = [];
     const contextApp = await buildApp({
       fetch: async (_url, init) => {
         contextCalls.push({ body: JSON.parse(String(init?.body)) as Record<string, unknown> });
         return Response.json({
           message: 'Visto che hai già Azul, evito di riproportelo.',
-          games: [{ id: 1 }],
+          games: [{ id_product: 1 }],
           quick_replies: [],
         });
       },
@@ -87,26 +90,34 @@ describe('ChatRoutes', () => {
     try {
       await contextApp.inject({
         method: 'PUT',
-        url: '/carts/alice/items/5',
+        url: '/cart/items/5',
+        headers: headers('alice'),
         payload: { quantity: 2 },
       });
       const checkout = await contextApp.inject({
         method: 'POST',
         url: '/orders',
-        payload: { customerId: 'alice' },
+        headers: headers('alice'),
       });
-      const order = checkout.json<{ id: number; createdAt: string }>();
+      expect(checkout.statusCode).toBe(201);
+      await contextApp.inject({
+        method: 'PUT',
+        url: '/cart/items/1',
+        headers: headers('alice'),
+        payload: { quantity: 1 },
+      });
 
       const response = await contextApp.inject({
         method: 'POST',
         url: '/chat',
+        headers: headers('alice'),
         payload: {
-          customerId: 'alice',
           sessionId: 'session-1',
           message: 'Cosa mi consigli ora?',
           customer_context: {
-            owned_product_ids: [999],
-            recent_orders: [],
+            received_products: [999],
+            sent_products: [999],
+            cart_products: [999],
           },
         },
       });
@@ -120,14 +131,9 @@ describe('ChatRoutes', () => {
             choices: [],
             k: 4,
             customer_context: {
-              owned_product_ids: [5],
-              recent_orders: [
-                {
-                  id: order.id,
-                  created_at: order.createdAt,
-                  items: [{ product_id: 5, name: 'Azul', quantity: 2 }],
-                },
-              ],
+              received_products: [5],
+              sent_products: [],
+              cart_products: [1],
             },
           },
         },
@@ -145,8 +151,8 @@ describe('ChatRoutes', () => {
       const response = await failingApp.inject({
         method: 'POST',
         url: '/chat',
+        headers: headers('alice'),
         payload: {
-          customerId: 'alice',
           sessionId: 'session-1',
           message: 'Cerco un cooperativo per due',
         },
@@ -162,6 +168,19 @@ describe('ChatRoutes', () => {
     }
   });
 
+  it('requires the customer identity header', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/chat',
+      payload: {
+        sessionId: 'session-1',
+        message: 'Cerco un cooperativo per due',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it('responds 502 when the seller response does not match the expected contract', async () => {
     const malformedApp = await buildApp({
       fetch: async () =>
@@ -175,8 +194,8 @@ describe('ChatRoutes', () => {
       const response = await malformedApp.inject({
         method: 'POST',
         url: '/chat',
+        headers: headers('alice'),
         payload: {
-          customerId: 'alice',
           sessionId: 'session-1',
           message: 'Cerco un cooperativo per due',
         },

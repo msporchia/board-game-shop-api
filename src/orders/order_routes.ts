@@ -2,17 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { errorResponseSchema } from '../core/error_response.js';
-import { customerIdSchema } from '../customers/customer_id.js';
+import { customerHeadersSchema, customerIdFromHeaders } from '../customers/customer_headers.js';
 import { orderSchema } from './order.js';
 import type { OrderService } from './order_service.js';
-
-const createOrderBodySchema = z.object({
-  customerId: customerIdSchema,
-});
-
-const historyQuerySchema = z.object({
-  customerId: customerIdSchema,
-});
 
 const orderListSchema = z.object({
   orders: z.array(orderSchema),
@@ -34,12 +26,12 @@ export class OrderRoutes {
         schema: {
           tags: ['orders'],
           summary: "Checkout: build an order from the customer's cart and clear it",
-          body: createOrderBodySchema,
+          headers: customerHeadersSchema,
           response: { 201: orderSchema, 409: errorResponseSchema },
         },
       },
       async (request, reply) => {
-        const order = this.service.checkout(request.body.customerId);
+        const order = this.service.checkout(customerIdFromHeaders(request.headers));
         if (!order) {
           return reply
             .code(409)
@@ -55,11 +47,11 @@ export class OrderRoutes {
         schema: {
           tags: ['orders'],
           summary: "A customer's order history, newest first",
-          querystring: historyQuerySchema,
+          headers: customerHeadersSchema,
           response: { 200: orderListSchema },
         },
       },
-      (request) => ({ orders: this.service.history(request.query.customerId) }),
+      (request) => ({ orders: this.service.history(customerIdFromHeaders(request.headers)) }),
     );
   }
 }

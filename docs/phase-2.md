@@ -7,8 +7,9 @@ file.
 
 ## 1. Identity and money
 
-- `customerId` — client-generated demo identity (no auth): `^[A-Za-z0-9_-]{1,64}$`,
-  validated everywhere it appears (`src/customers/customer_id.ts`).
+- `X-Customer-Id` — client-generated demo identity header (no auth):
+  `^[A-Za-z0-9_-]{1,64}$`, validated on every customer-scoped route
+  (`src/customers/customer_headers.ts`).
 - Money is integer cents (`*Cents`), computed server-side only: unit price, line
   totals (`unitPriceCents × quantity`), cart/order totals.
 
@@ -30,16 +31,19 @@ demo has no migration story by design.
 
 ## 3. This service's API
 
-- `GET /carts/{customerId}` → `200` the cart (empty cart for a never-seen
+- `GET /cart` → `200` the current customer's cart (empty cart for a never-seen
   customer — carts are implicit, never 404).
-- `PUT /carts/{customerId}/items/{productId}` body `{ quantity }` (int, 1–99) —
-  upserts the line → `200` full cart; `404` unknown product.
-- `DELETE /carts/{customerId}/items/{productId}` — idempotent → `200` full cart.
-- `POST /orders` body `{ customerId }` — builds the order atomically from the
-  stored cart (price/name snapshot, ISO-8601 UTC `createdAt`), clears the cart →
+- `PUT /cart/items/{productId}` body `{ quantity }` (int, 1–99) — upserts the line →
+  `200` full cart; `404` unknown product.
+- `DELETE /cart/items/{productId}` — idempotent → `200` full cart.
+- `POST /orders` — builds the order atomically from the current customer's stored
+  cart (price/name snapshot, ISO-8601 UTC `createdAt`), clears the cart →
   `201` the order; `409 { error: 'empty_cart' }` when there is nothing to order.
-- `GET /orders?customerId=` → `200 { orders }`, newest first — the recency feed
-  Phase 6 injects into the advisor.
+- `GET /orders` → `200 { orders }`, newest first — the history source Phase 6 reduces
+  to received product ids for the advisor context.
+
+All customer-scoped routes require `X-Customer-Id`; the customer id is deliberately
+not accepted in paths, querystrings or request bodies.
 
 Shapes: cart `{ customerId, items, totalCents }`, item `{ productId, name, image,
 unitPriceCents, quantity, lineTotalCents }`; order `{ id, customerId, createdAt,
@@ -51,6 +55,8 @@ totalCents, items }`, order item = cart item minus `image`.
   `shop.db` plus `transaction(fn)`; stores receive it via constructor and own their
   tables. (`CatalogStore` is refactored onto it.)
 - `src/customers/customer_id.ts` — `customerIdSchema`.
+- `src/customers/customer_headers.ts` — `X-Customer-Id` route header schema and
+  extraction helper.
 - `src/catalog/product.ts` — gains `priceCents`; `catalog_store.ts` the column;
   `catalog_seeder.ts` the pricing rule.
 - `src/carts/cart.ts` — zod schemas + types (`cartSchema`, `cartItemSchema`).
@@ -80,7 +86,7 @@ fixture. Store/service tests construct their classes on a `:memory:` `Database`.
 - `tests/carts/cart_store/` — line round-trip, upsert overwrite, remove, clear.
 - `tests/carts/cart_service/` — totals math, unknown product, idempotent remove.
 - `tests/carts/cart_routes/` — empty cart, PUT/DELETE flows, 404 unknown product,
-  400 invalid quantity/customerId.
+  400 invalid quantity/customer header.
 - `tests/orders/order_store/` — insert/list round-trip, newest first.
 - `tests/orders/order_service/checkout.test.ts` — snapshot + totals, cart cleared,
   empty cart → null.
@@ -91,6 +97,6 @@ fixture. Store/service tests construct their classes on a `:memory:` `Database`.
 
 1. `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test` green.
 2. Built server, fresh DB: PUT two cart lines → totals correct; POST /orders →
-   201 with snapshot, GET /carts now empty, GET /orders shows the order; second
+   201 with snapshot, GET /cart now empty, GET /orders shows the order; second
    POST → 409; restart → order survives.
 3. `/docs/json` documents the cart and order routes.

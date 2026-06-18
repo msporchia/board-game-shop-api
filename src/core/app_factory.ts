@@ -23,6 +23,11 @@ import { OrderStore } from '../orders/order_store.js';
 import { Config } from './config.js';
 import { Database } from './database.js';
 
+export interface AppFactoryDependencies {
+  fetch?: typeof fetch;
+  logger?: boolean;
+}
+
 /**
  * Composition of the Fastify application.
  *
@@ -34,7 +39,7 @@ import { Database } from './database.js';
 export class AppFactory {
   constructor(
     private readonly config: Config,
-    private readonly dependencies: { fetch?: typeof fetch } = {},
+    private readonly dependencies: AppFactoryDependencies = {},
   ) {}
 
   /**
@@ -43,7 +48,9 @@ export class AppFactory {
    * emitted OpenAPI document.
    */
   async create(): Promise<FastifyInstance> {
-    const app = fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
+    const app = fastify({
+      logger: this.dependencies.logger ?? true,
+    }).withTypeProvider<ZodTypeProvider>();
 
     // zod schemas validate inbound requests and serialize responses.
     app.setValidatorCompiler(validatorCompiler);
@@ -84,6 +91,7 @@ export class AppFactory {
     const chatService = new ChatService(
       this.config.sellerApiUrl,
       catalogStore,
+      cartService,
       orderService,
       this.dependencies.fetch,
     );

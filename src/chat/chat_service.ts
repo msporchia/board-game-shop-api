@@ -1,3 +1,4 @@
+import type { CartService } from '../carts/cart_service.js';
 import type { CatalogStore } from '../catalog/catalog_store.js';
 import type { OrderService } from '../orders/order_service.js';
 import { type ChatRequest, type ChatResponse, sellerChatResponseSchema } from './chat.js';
@@ -10,7 +11,12 @@ export class ChatUpstreamError extends Error {
 }
 
 type Fetcher = typeof fetch;
-const RECENT_ORDER_LIMIT = 5;
+
+interface SellerCustomerContext {
+  received_products: number[];
+  sent_products: number[];
+  cart_products: number[];
+}
 
 /**
  * Browser-facing chat adapter. The browser calls the shop BFF only; this service
@@ -21,11 +27,12 @@ export class ChatService {
   constructor(
     private readonly sellerApiUrl: string,
     private readonly catalog: CatalogStore,
+    private readonly carts: CartService,
     private readonly orders: OrderService,
     private readonly fetcher: Fetcher = fetch,
   ) {}
 
-  async reply(request: ChatRequest): Promise<ChatResponse> {
+  async reply(customerId: string, request: ChatRequest): Promise<ChatResponse> {
     const response = await this.fetcher(`${this.sellerApiUrl}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,7 +41,7 @@ export class ChatService {
         message: request.message,
         choices: request.choices,
         k: request.k,
-        customer_context: this.customerContextFor(request.customerId),
+        customer_context: this.customerContextFor(customerId),
       }),
     });
 
@@ -75,33 +82,23 @@ export class ChatService {
     };
   }
 
-  private customerContextFor(customerId: string): {
-    owned_product_ids: number[];
-    recent_orders: Array<{
-      id: number;
-      created_at: string;
-      items: Array<{ product_id: number; name: string; quantity: number }>;
-    }>;
-  } {
+  private customerContextFor(customerId: string): SellerCustomerContext {
     const history = this.orders.history(customerId);
-    const ownedProductIds = new Set<number>();
-    for (const order of history) {
-      for (const item of order.items) {
-        ownedProductIds.add(item.productId);
-      }
-    }
+    const receivedProducts = this.uniqueProductIds(
+      history.flatMap((order) => order.items.map((item) => item.productId)),
+    );
+    const cartProducts = this.uniqueProductIds(
+      this.carts.getCart(customerId).items.map((item) => item.productId),
+    );
 
     return {
-      owned_product_ids: [...ownedProductIds].sort((a, b) => a - b),
-      recent_orders: history.slice(0, RECENT_ORDER_LIMIT).map((order) => ({
-        id: order.id,
-        created_at: order.createdAt,
-        items: order.items.map((item) => ({
-          product_id: item.productId,
-          name: item.name,
-          quantity: item.quantity,
-        })),
-      })),
+      received_products: receivedProducts,
+      sent_products: [],
+      cart_products: cartProducts,
     };
+  }
+
+  private uniqueProductIds(ids: number[]): number[] {
+    return [...new Set(ids)].sort((a, b) => a - b);
   }
 }

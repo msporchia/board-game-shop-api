@@ -16,11 +16,11 @@ orders to), in a `products` table. It is seeded at boot, when empty, from
 `data/sample-catalog.json` — a checked-in snapshot (legacy PrestaShop-shaped
 records) of the same source that feeds the AI service's enrichment pipeline.
 
-**Open question (da valutare, tracked in PLAN.md):** how catalog records flow
-between the two services long-term — the AI service pushes enriched records here,
-or this service owns/generates the records and feeds them to the AI service for
-upgrading. Until decided, the seed JSON is the only source and there is no
-service-to-service catalog call.
+Production-shaped flow, documented in the README: this service creates and owns the
+commerce product, then asks seller to index/enrich it; seller can call back with
+cleaned/enriched fields without becoming the commerce source of truth. In the current
+demo, the seed JSON is the only source and there is no product-write or
+enrichment-callback API.
 
 Driver: `node:sqlite` (`DatabaseSync`) — in the platform, zero native deps;
 experimental in Node 22 but API-frozen enough for this demo, and swappable behind

@@ -3,7 +3,7 @@ import type { Cart, CartItem } from './cart.js';
 import type { CartStore } from './cart_store.js';
 
 /**
- * Cart use-cases behind the /carts routes: composes the stored raw lines with
+ * Cart use-cases behind the /cart routes: composes the stored raw lines with
  * catalog data (name, image, current price) and computes line and cart totals
  * server-side. A line whose product has left the catalog is dropped at read
  * time — the cart self-heals instead of failing.

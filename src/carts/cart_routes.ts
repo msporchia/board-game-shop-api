@@ -2,15 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { errorResponseSchema } from '../core/error_response.js';
-import { customerIdSchema } from '../customers/customer_id.js';
+import { customerHeadersSchema, customerIdFromHeaders } from '../customers/customer_headers.js';
 import { cartSchema } from './cart.js';
 import type { CartService } from './cart_service.js';
 
-const cartParamsSchema = z.object({
-  customerId: customerIdSchema,
-});
-
-const itemParamsSchema = cartParamsSchema.extend({
+const itemParamsSchema = z.object({
   productId: z.coerce.number().int().min(1),
 });
 
@@ -19,7 +15,7 @@ const putItemBodySchema = z.object({
 });
 
 /**
- * /carts routes. Handlers validate (zod, via the route schemas) and delegate
+ * /cart routes. Handlers validate (zod, via the route schemas) and delegate
  * to the cart service; every response is the full cart with server-computed
  * totals, so the web client never does money math.
  */
@@ -30,32 +26,34 @@ export class CartRoutes {
     const typed = app.withTypeProvider<ZodTypeProvider>();
 
     typed.get(
-      '/carts/:customerId',
+      '/cart',
       {
         schema: {
           tags: ['carts'],
-          summary: "A customer's cart (empty for a never-seen customer)",
-          params: cartParamsSchema,
+          summary: "The current customer's cart (empty for a never-seen customer)",
+          headers: customerHeadersSchema,
           response: { 200: cartSchema },
         },
       },
-      (request) => this.service.getCart(request.params.customerId),
+      (request) => this.service.getCart(customerIdFromHeaders(request.headers)),
     );
 
     typed.put(
-      '/carts/:customerId/items/:productId',
+      '/cart/items/:productId',
       {
         schema: {
           tags: ['carts'],
           summary: 'Set the quantity of a cart line (upsert)',
+          headers: customerHeadersSchema,
           params: itemParamsSchema,
           body: putItemBodySchema,
           response: { 200: cartSchema, 404: errorResponseSchema },
         },
       },
       async (request, reply) => {
+        const customerId = customerIdFromHeaders(request.headers);
         const cart = this.service.setItem(
-          request.params.customerId,
+          customerId,
           request.params.productId,
           request.body.quantity,
         );
@@ -70,16 +68,18 @@ export class CartRoutes {
     );
 
     typed.delete(
-      '/carts/:customerId/items/:productId',
+      '/cart/items/:productId',
       {
         schema: {
           tags: ['carts'],
           summary: 'Remove a cart line (idempotent)',
+          headers: customerHeadersSchema,
           params: itemParamsSchema,
           response: { 200: cartSchema },
         },
       },
-      (request) => this.service.removeItem(request.params.customerId, request.params.productId),
+      (request) =>
+        this.service.removeItem(customerIdFromHeaders(request.headers), request.params.productId),
     );
   }
 }

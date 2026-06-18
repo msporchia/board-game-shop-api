@@ -61,9 +61,8 @@ function toProduct(raw: z.infer<typeof seedProductSchema>): Product {
  * Seeds the catalog store from a JSON snapshot of the legacy (PrestaShop-shaped)
  * source — the same data feeding the AI service's pipeline. Owns that legacy wire
  * schema and its translation into the domain model, so nothing downstream sees
- * `id_product` or `marca`. How catalog records flow between the services long-term
- * is an open question (see PLAN.md); until decided, this snapshot is the only
- * source.
+ * `id_product` or `marca`. The production-shaped flow is shop-created products plus
+ * seller indexing/enrichment callbacks; this snapshot is the demo shortcut.
  */
 export class CatalogSeeder {
   constructor(

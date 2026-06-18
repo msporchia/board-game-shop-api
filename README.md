@@ -2,8 +2,8 @@
 
 > Portfolio slice: a Node + TypeScript commerce BFF for the board-game storefront.
 > The catalog, server-side cart and checkout flow are implemented and tested; the
-> first AI-facing `/chat` proxy is in place; the remaining showcase work is generated
-> web contracts, `/search`, purchase-history personalization and final polish.
+> AI-facing `/chat` proxy is in place; the remaining showcase work is real-stack
+> chat verification, seller-side personalization, `/search` and final polish.
 
 The commerce backend of a small board-game e-commerce demo: products, orders,
 customers — and the **BFF** (backend-for-frontend) in front of an AI advisor service.
@@ -26,7 +26,7 @@ system is not only a model demo:
 - every boundary is parsed at runtime, not trusted because TypeScript says so;
 - the React app can consume emitted OpenAPI contracts instead of hand-maintained DTOs;
 - the most interesting AI behavior comes from composition: the BFF injects real
-  purchase history while the AI service stays ignorant of customer identity.
+  commerce context while the AI service stays ignorant of customer identity.
 
 ## The role this service plays
 
@@ -36,25 +36,104 @@ AI to the Python service — so service-to-service calls are real, not diagram f
 ```mermaid
 flowchart LR
     WEB[board-game-shop-web<br/>React + TS] -->|only entry point| SHOP[board-game-shop-api<br/>Node + TS · BFF]
-    SHOP -->|/chat, /search| API[board-game-rag-seller<br/>Python · AI/RAG]
-    SHOP --> DB[(shop.db<br/>catalog, orders, customers)]
+    SHOP -->|/chat now<br/>/search planned| API[board-game-rag-seller<br/>Python · AI/RAG]
+    SHOP --> DB[(shop.db<br/>catalog, carts, orders)]
 ```
 
 - **Products** — owned here: a catalog store in `shop.db`, seeded from a checked-in
-  JSON snapshot of the same source that feeds the AI service's pipeline. How records
-  flow between the two services long-term (the AI service pushes enriched records
-  here, or this service feeds its records to the AI for enrichment) is an open
-  question — see [PLAN.md](PLAN.md).
-- **Orders & customers** — owned here (`shop.db`, SQLite), keyed by a client-generated
-  `customer_id` (no auth — it's a demo identity).
-- **Chat & search** — the next BFF slice: proxy the AI service, validate its responses,
-  adapt contracts for the browser and inject the customer's **purchase history**
-  (`customer_context`) into chat requests. That is where this repo earns its BFF
-  title: cross-session personalization while the AI service stays ignorant of
+  JSON snapshot of the same source that feeds the AI service's pipeline. In the
+  production-shaped flow, this service creates the commerce record, asks seller to
+  index/enrich it, and may accept cleaned AI-enriched fields back while remaining the
+  source of truth.
+- **Orders & customers** — owned here (`shop.db`, SQLite). Browser requests identify
+  the active demo customer through `X-Customer-Id`; persisted rows are keyed by
+  `customer_id`.
+- **Chat** — implemented as the first AI-facing BFF slice: the service proxies the AI
+  advisor, validates its response, normalizes seller `id_product` candidates into
+  browser-facing product ids, enriches them with shop-owned data and injects the
+  customer's **commerce context** (`customer_context`). That is where this repo earns
+  its BFF title: cross-session personalization while the AI service stays ignorant of
   customer identity.
+- **Search** — still a planned thin passthrough to the seller service, with this BFF
+  validating query/facet input and adapting the response for the browser.
 
 Database-per-service: this service never reads the AI service's stores, and vice
 versa. Cross-domain needs travel through API calls.
+
+## Normal production shape
+
+The demo keeps the catalog simple, but the intended production ownership is clear:
+the shop owns products, prices, availability, carts and orders; the seller owns AI
+retrieval, enrichment and conversational strategy.
+
+### Product ingestion and enrichment
+
+In a normal store, product creation starts here. This service owns the commerce
+record, then asks the seller service to index and enrich it. Seller may return a
+cleaned version — better description, recovered facts, search text — but the commerce
+record still belongs to the shop.
+
+```mermaid
+flowchart LR
+    ADMIN[Admin / catalog import] --> SHOP[shop API<br/>create product record]
+    SHOP --> DB[(commerce DB<br/>products, prices, availability)]
+    SHOP -. index/enrich product .-> SELLER[seller AI/RAG]
+    SELLER -. cleaned enriched product .-> SHOP
+    SELLER -. searchable representation .-> INDEX[(vector index)]
+```
+
+Dashed arrows are intentional future/production flows. In this demo the catalog is
+seeded from `data/sample-catalog.json`, so product-write APIs and seller enrichment
+callbacks were not needed.
+
+### Sales and advisor flow
+
+The browser never calls seller directly. The web sends the customer turn to this BFF;
+the BFF adds commerce context (received products, sent products and cart products),
+then asks seller for the advisor response. In a full production flow, seller would
+also check back with this service before recommending a candidate, because only the
+shop knows live stock, price and buyability.
+
+```mermaid
+flowchart LR
+    USER[Customer] --> WEB[shop web]
+    WEB -->|chat turn| SHOP[shop API / BFF]
+    SHOP -->|add customer_context<br/>received, sent, cart products| SHOPCTX[commerce context]
+    SHOPCTX -->|chat request| SELLER[seller AI/RAG]
+    SELLER -. availability / price check .-> SHOP
+    SHOP -. stock, price, buyability .-> SELLER
+    SELLER -->|grounded candidate ids + message| SHOP
+    SHOP -->|buyable cards + server prices| WEB
+```
+
+In the current demo, the BFF already validates seller responses, drops candidate ids
+that are not in its catalog, enriches returned ids with shop-owned product data, and
+injects `customer_context` from stored orders and the current cart. Live stock is not
+modeled yet, so the availability callback is documented as the normal production shape
+rather than implemented code.
+
+## Data ownership and storage
+
+This service uses one owned SQLite database, `shop.db`, through Node's built-in
+`node:sqlite` driver. It is intentionally small, local-first and easy to inspect, but
+the code keeps it behind store/service classes so the persistence detail does not leak
+into routes.
+
+Owned data:
+
+- `products` — shop-facing catalog records, seeded when empty from
+  `data/sample-catalog.json`. The seed file is legacy-shaped, but legacy names are
+  translated at the seed boundary and the API exposes camelCase product contracts.
+- `cart_items` — server-side cart lines keyed by `customer_id` and `product_id`. The
+  request source of truth is `X-Customer-Id`; the browser never computes prices or
+  totals, it only renders the BFF response.
+- `orders` and `order_items` — checkout snapshots. Names, prices, quantities and
+  timestamps are copied at order time so later catalog changes do not rewrite history.
+
+Demo tradeoffs are explicit: there is no auth, no payment, and no migration system.
+Schema changes are wipe-and-reseed. That keeps the repo focused on the portfolio goal:
+TypeScript contracts, runtime validation, BFF composition and transactional commerce
+behavior.
 
 ## Current status
 
@@ -67,15 +146,19 @@ Implemented in this repo:
 - Server-side carts with server-computed money.
 - Transactional checkout into order snapshots.
 - Order history by customer.
+- Customer-scoped route identity via the required `X-Customer-Id` header; customer ids
+  are not accepted in cart/order/chat paths, querystrings or request bodies.
 - First `POST /chat` BFF proxy: browser-facing request, seller-facing call, seller
   response validation and buyable card enrichment from the shop catalog.
-- `customer_context` injection from shop-owned order history: owned product ids and
-  recent order summaries are built server-side, not accepted from the browser.
+- `customer_context` injection from shop-owned state: received products, sent products
+  and cart products are built server-side, not accepted from the browser.
+- OpenAPI export command and contract tests for the browser-facing route surface.
 - Vitest coverage for config, stores, services and HTTP routes via `fastify.inject`.
 
 Still intentionally open for the showcase:
 
-- generated API types consumed by `board-game-shop-web`;
+- real-stack verification that `board-game-shop-web` consumes the emitted OpenAPI
+  contract cleanly against a running BFF;
 - seller-side use of `customer_context` for grounded personalization;
 - `/search` passthrough to `board-game-rag-seller`;
 - README screenshots/GIF once the chat-to-cart loop exists in the web app.
@@ -87,7 +170,7 @@ Still intentionally open for the showcase:
 | Runtime | Node 22 + Fastify | Modern, lean; the service's discipline is hand-applied, not framework-imposed (NestJS was the considered alternative) |
 | Language | TypeScript strict | Contracts as code, mirroring the Python service's Pydantic discipline |
 | Validation | Zod on every boundary | Parse untrusted data at runtime: HTTP inputs, env vars, seed files and future upstream AI responses |
-| Contracts | OpenAPI emission | Route schemas emit the browser-facing contract; generated web types are the next showcase milestone |
+| Contracts | OpenAPI emission | Route schemas emit the browser-facing contract; the web app generates types from this spec |
 | Storage | SQLite (`shop.db`, via `node:sqlite`) | Consistent with the ecosystem; zero native deps; swappable behind a store class |
 | Tests | Vitest + `fastify.inject` | Route behavior tested against the HTTP contract, no live server |
 
@@ -96,6 +179,19 @@ Still intentionally open for the showcase:
 - Repo coordination: [docs/cross-repo-showcase-plan.md](docs/cross-repo-showcase-plan.md).
 - This repo's active checklist: [docs/showcase-checklist.md](docs/showcase-checklist.md).
 - Phased roadmap: [PLAN.md](PLAN.md).
+
+## How to review this repo
+
+For the portfolio read, start from the BFF boundaries:
+
+1. Run the quality gates in the Development section.
+2. Inspect the OpenAPI contract at `/docs/json` or with `npm run --silent openapi:print`.
+3. Check customer-scoped routes: `X-Customer-Id` is required, while `/cart`, `/orders`
+   and `/chat` contain no customer id in path/body/query.
+4. Follow `POST /chat`: browser camelCase request in, seller snake_case request out,
+   seller `id_product` results normalized back to buyable shop product cards.
+5. Check the cart/order tests: prices and totals are always computed server-side, and
+   checkout snapshots the order before clearing the cart.
 
 ## Structure convention
 
@@ -119,6 +215,13 @@ curl localhost:3000/health   # { "status": "ok", "service": "board-game-shop-api
 OpenAPI: Swagger UI at `/docs`, raw spec at `/docs/json` (derived from the zod
 route schemas — no hand-maintained DTOs).
 
+For the React app, export the same contract without starting a server:
+
+```bash
+npm run --silent openapi:print    # writes clean OpenAPI JSON to stdout
+npm run openapi:export            # writes ./openapi.json for local client generation
+```
+
 Quality gates (all run in CI):
 
 ```bash
@@ -126,6 +229,7 @@ npm test               # vitest (route + config tests, via fastify.inject)
 npm run typecheck      # tsc --noEmit, strict
 npm run lint           # eslint
 npm run format:check   # prettier --check  (npm run format to fix)
+npm run openapi:print  # emitted browser-facing API contract
 npm run build          # tsc -> dist/ ; npm start runs node dist/main.js
 ```
 

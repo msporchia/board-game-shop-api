@@ -4,7 +4,7 @@ import { customerIdSchema } from '../customers/customer_id.js';
 /**
  * Outbound order model. An order is a snapshot: names and prices are copied
  * from the catalog at checkout time, so later catalog changes never rewrite
- * history. `createdAt` is ISO-8601 UTC — the advisor later uses real recency.
+ * history. `createdAt` is ISO-8601 UTC for audit/history display.
  */
 
 export const orderItemSchema = z.object({

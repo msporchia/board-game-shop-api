@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../support/build_app.js';
 
+const headers = (customerId: string) => ({ 'x-customer-id': customerId });
+
 describe('OrderRoutes', () => {
   let app: FastifyInstance;
 
@@ -14,13 +16,23 @@ describe('OrderRoutes', () => {
   });
 
   it('POST builds the order from the cart, clears it, and GET lists the history', async () => {
-    await app.inject({ method: 'PUT', url: '/carts/alice/items/1', payload: { quantity: 2 } });
-    await app.inject({ method: 'PUT', url: '/carts/alice/items/5', payload: { quantity: 1 } });
+    await app.inject({
+      method: 'PUT',
+      url: '/cart/items/1',
+      headers: headers('alice'),
+      payload: { quantity: 2 },
+    });
+    await app.inject({
+      method: 'PUT',
+      url: '/cart/items/5',
+      headers: headers('alice'),
+      payload: { quantity: 1 },
+    });
 
     const checkout = await app.inject({
       method: 'POST',
       url: '/orders',
-      payload: { customerId: 'alice' },
+      headers: headers('alice'),
     });
     expect(checkout.statusCode).toBe(201);
     const order = checkout.json<{ id: number; createdAt: string; totalCents: number }>();
@@ -28,10 +40,10 @@ describe('OrderRoutes', () => {
     expect(order).toMatchObject({ customerId: 'alice', totalCents: 2 * 3650 + 2600 });
     expect(order.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
-    const cart = await app.inject({ method: 'GET', url: '/carts/alice' });
+    const cart = await app.inject({ method: 'GET', url: '/cart', headers: headers('alice') });
     expect(cart.json()).toEqual({ customerId: 'alice', items: [], totalCents: 0 });
 
-    const history = await app.inject({ method: 'GET', url: '/orders?customerId=alice' });
+    const history = await app.inject({ method: 'GET', url: '/orders', headers: headers('alice') });
     expect(history.statusCode).toBe(200);
     expect(history.json()).toEqual({ orders: [order] });
   });
@@ -40,22 +52,26 @@ describe('OrderRoutes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/orders',
-      payload: { customerId: 'ghost' },
+      headers: headers('ghost'),
     });
 
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ error: 'empty_cart' });
   });
 
-  it('validates customerId on both routes', async () => {
+  it('validates the customer header on both routes', async () => {
     const badPost = await app.inject({
       method: 'POST',
       url: '/orders',
-      payload: { customerId: 'spaces are bad' },
+      headers: headers('spaces are bad'),
     });
     expect(badPost.statusCode).toBe(400);
 
-    const badGet = await app.inject({ method: 'GET', url: '/orders?customerId=bad%20id' });
+    const badGet = await app.inject({
+      method: 'GET',
+      url: '/orders',
+      headers: headers('bad id'),
+    });
     expect(badGet.statusCode).toBe(400);
 
     const missing = await app.inject({ method: 'GET', url: '/orders' });
@@ -68,11 +84,7 @@ describe('OrderRoutes', () => {
     }>();
 
     expect(Object.keys(spec.paths)).toEqual(
-      expect.arrayContaining([
-        '/carts/{customerId}',
-        '/carts/{customerId}/items/{productId}',
-        '/orders',
-      ]),
+      expect.arrayContaining(['/cart', '/cart/items/{productId}', '/orders']),
     );
   });
 });

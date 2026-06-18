@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import { customerIdSchema } from '../customers/customer_id.js';
 
 export const chatRequestSchema = z.object({
-  customerId: customerIdSchema,
   sessionId: z.string().min(1),
   message: z.string().min(1),
   choices: z.array(z.string()).default([]),
@@ -25,9 +23,20 @@ export const chatResponseSchema = z.object({
   quickReplies: z.array(z.string()),
 });
 
-export const sellerChatGameSchema = z.object({
+const sellerChatGameByIdSchema = z.object({
   id: z.number().int(),
 });
+
+const sellerChatGameByProductIdSchema = z
+  .object({
+    id_product: z.number().int(),
+  })
+  .transform(({ id_product }) => ({ id: id_product }));
+
+export const sellerChatGameSchema = z.union([
+  sellerChatGameByIdSchema,
+  sellerChatGameByProductIdSchema,
+]);
 
 export const sellerChatResponseSchema = z.object({
   message: z.string(),

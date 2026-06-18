@@ -10,7 +10,7 @@ One story:
 
 > A customer browses a board-game shop, asks an AI advisor for help, adds a grounded
 > recommendation to the cart, checks out, then sees the next advisor conversation
-> change because the shop BFF injects real purchase history into the AI service.
+> change because the shop BFF injects real commerce context into the AI service.
 
 What this proves:
 
@@ -28,7 +28,7 @@ Owns AI and retrieval.
 
 - Owns `/search` and `/chat` behavior.
 - Owns RAG grounding, retrieval filters, session memory inside the AI service, evals.
-- Accepts optional `customer_context` from the shop BFF, but does not own customer
+- Will accept optional `customer_context` from the shop BFF, but does not own customer
   identity, carts, prices, or orders.
 - Does not get called directly by the browser.
 
@@ -40,8 +40,8 @@ Owns commerce and BFF composition.
 - Owns the public browser-facing API and emitted OpenAPI spec.
 - Validates every HTTP/env/file/upstream boundary with Zod or equivalent runtime
   parsing.
-- Proxies `/chat` and `/search` to `seller`.
-- Injects purchase history into `/chat` as `customer_context`.
+- Proxies `/chat` to `seller`; `/search` is the next thin passthrough.
+- Injects commerce context into `/chat` as `customer_context`.
 - Maps API style where useful: browser-facing contract can be camelCase; seller-facing
   contract can stay whatever `seller` already uses.
 
@@ -50,12 +50,13 @@ Owns commerce and BFF composition.
 Owns the customer experience.
 
 - Talks only to `seller-shop`.
-- Generates/consumes API types from the BFF OpenAPI spec; no hand-maintained DTO
-  mirrors once the contract generation step is in place.
+- Generates/consumes API types from the BFF OpenAPI spec; feature contract files should
+  re-export typed slices from the generated source, not redefine DTOs by hand.
 - Renders catalog, product detail, cart, checkout, chat, recommendations, quick replies,
   and personalization effects.
 - Never computes money or checkout totals.
-- Keeps `customerId` and `chatSessionId` in localStorage for the demo identity.
+- Keeps `customerId` and `chatSessionId` in localStorage for the demo identity; sends
+  the active customer as `X-Customer-Id`.
 - Owns the final full-stack smoke/e2e and screenshots/GIF used by the READMEs.
 
 ### Human/product owner
@@ -71,26 +72,71 @@ Keeps scope tight.
 Contracts come before UI polish. If web needs a field, it should be added to the BFF
 contract first, then consumed from generated types.
 
+## Production-shaped flows beyond the demo
+
+The current showcase uses a seeded catalog and no stock model. A real store would add
+two dashed integration loops while keeping the same ownership boundaries:
+
+Product ingestion/enrichment:
+
+```mermaid
+flowchart LR
+    ADMIN[Admin / catalog import] --> SHOP[shop API<br/>commerce source of truth]
+    SHOP --> DB[(commerce DB)]
+    SHOP -. product created/changed:<br/>index + enrich .-> SELLER[seller AI/RAG]
+    SELLER -. cleaned enriched data .-> SHOP
+    SELLER -. searchable/indexed representation .-> INDEX[(vector index)]
+```
+
+Sales/advisor flow:
+
+```mermaid
+flowchart LR
+    WEB[shop web] -->|chat turn| SHOP[shop API / BFF]
+    SHOP -->|chat + customer_context| SELLER[seller AI/RAG]
+    SELLER -. candidate availability / live price check .-> SHOP
+    SHOP -. stock, price, buyability .-> SELLER
+    SELLER -->|grounded candidate ids + message| SHOP
+    SHOP -->|buyable cards| WEB
+```
+
+- Product lifecycle: the shop owns the product record, then asks seller to index and
+  enrich it. Seller can return cleaned/enriched fields, but it does not become the
+  commerce source of truth.
+- Recommendation lifecycle: seller should not assume a candidate can be sold. Either
+  seller calls back to the shop for availability/price, or the BFF filters/enriches
+  candidate ids before the browser sees them.
+- Demo stance: this is documented, not built, because the portfolio slice is about the
+  Node BFF, contract validation, cart/checkout ownership and chat-to-cart composition.
+
 ### Existing BFF surface
 
 - `GET /health`
 - `GET /products`
 - `GET /products/{id}`
-- `GET /carts/{customerId}`
-- `PUT /carts/{customerId}/items/{productId}`
-- `DELETE /carts/{customerId}/items/{productId}`
+- `GET /cart`
+- `PUT /cart/items/{productId}`
+- `DELETE /cart/items/{productId}`
 - `POST /orders`
-- `GET /orders?customerId=...`
+- `GET /orders`
+- `POST /chat`
 
-### BFF routes to add next
+Customer-scoped routes require `X-Customer-Id`; the customer id is not accepted in
+paths, querystrings or request bodies.
 
-`POST /chat`
+### Current BFF chat contract
+
+`POST /chat` is implemented in `seller-shop`. The browser sends `X-Customer-Id` plus
+the current turn; the BFF derives `customer_context` internally from shop-owned state.
 
 Browser-facing request:
 
+```http
+X-Customer-Id: demo-customer
+```
+
 ```json
 {
-  "customerId": "demo-customer",
   "sessionId": "demo-chat-session",
   "message": "Cerco un cooperativo per due",
   "choices": ["max 30 minuti"],
@@ -101,10 +147,11 @@ Browser-facing request:
 BFF behavior:
 
 - validates request;
-- reads recent orders for `customerId`;
-- builds `customer_context`;
+- reads received products, sent products and current cart products for `X-Customer-Id`;
+- builds `customer_context` internally;
 - forwards to `seller` `/chat`;
 - validates seller response;
+- normalizes seller `id_product` game hits into the browser-facing `id` contract;
 - enriches returned game cards with shop-owned fields when needed: price, image, buyable
   product id;
 - returns a stable web contract.
@@ -129,7 +176,7 @@ Browser-facing response:
 }
 ```
 
-Seller-facing forwarded shape can remain close to seller's existing contract:
+Seller-facing forwarded shape:
 
 ```json
 {
@@ -138,23 +185,17 @@ Seller-facing forwarded shape can remain close to seller's existing contract:
   "choices": ["max 30 minuti"],
   "k": 4,
   "customer_context": {
-    "owned_product_ids": [3],
-    "recent_orders": [
-      {
-        "id": 12,
-        "created_at": "2026-06-12T10:00:00.000Z",
-        "items": [
-          {
-            "product_id": 3,
-            "name": "Azul",
-            "quantity": 1
-          }
-        ]
-      }
-    ]
+    "received_products": [3],
+    "sent_products": [4, 5],
+    "cart_products": [6, 9]
   }
 }
 ```
+
+The browser-facing OpenAPI contract deliberately does not expose `customer_context`; the
+client cannot forge it.
+
+### BFF route still missing
 
 `GET /search`
 
@@ -168,7 +209,8 @@ Seller-facing forwarded shape can remain close to seller's existing contract:
 
 - BFF emits OpenAPI from Zod route schemas.
 - Web generates types/client from that spec.
-- Remove manual contract mirrors in `seller-web/src/contracts`.
+- Keep `seller-web/src/contracts` as generated OpenAPI types plus thin typed aliases;
+  avoid hand-written DTO mirrors.
 
 2. Chat to cart loop
 
@@ -177,12 +219,12 @@ Seller-facing forwarded shape can remain close to seller's existing contract:
 - Add-to-cart invalidates/updates the server cart.
 - User can complete checkout without losing the conversation.
 
-3. Purchase-history personalization
+3. Commerce-context personalization
 
 - User buys a game.
-- Next chat request includes order history from `seller-shop`.
-- Advisor visibly changes behavior: greeting mentions a real order, or owned game is not
-  recommended again.
+- Next chat request includes received/sent/cart product ids from `seller-shop`.
+- Advisor visibly changes behavior: received games are not recommended again, cart
+  games are treated as already in-progress.
 - Web makes the before/after visible.
 
 4. Behind-the-scenes panel
@@ -207,31 +249,34 @@ Optional but high value for a portfolio demo.
 
 Seller-shop:
 
-- Update README: no longer "planning stage"; catalog, cart and orders are implemented.
-- Mention green quality gates and tested HTTP boundaries.
+- ✅ README no longer says "planning stage"; catalog, cart, orders, chat proxy,
+  OpenAPI export and BFF-built commerce context are documented.
+- ✅ Green quality gates and tested HTTP boundaries are documented.
 
 Seller-web:
 
-- Update README: no longer "planning stage"; catalog, product detail, cart and checkout
-  exist.
-- Keep open items explicit: generated API types, chat, search, polish.
+- ✅ README no longer says "planning stage"; catalog, product detail, cart, checkout,
+  generated contracts, chat UI, identity switcher and demo recording are documented.
+- ✅ Open items are explicit: real-stack chat verification, order history view,
+  seller-side `customer_context` usage.
 
 Both:
 
-- Align phase status in `PLAN.md`.
+- ✅ Phase/status docs aligned enough for the current showcase pass.
 
 ### Milestone 2: Contract generation
 
 Seller-shop:
 
-- Ensure `/docs/json` is stable in dev and CI.
-- Add a script or documented command for exporting OpenAPI.
+- ✅ `/docs/json` is covered by contract tests.
+- ✅ `npm run --silent openapi:print` and `npm run openapi:export` exist.
 
 Seller-web:
 
-- Add OpenAPI type generation.
-- Replace hand-written contract mirrors.
-- Keep MSW fixtures aligned with generated types.
+- ✅ OpenAPI type generation exists (`npm run generate:api`).
+- ✅ Feature contract files consume generated types.
+- 🔶 MSW/e2e fixtures are close to the contract and should be checked during final
+  real-stack verification.
 
 Done when:
 
@@ -241,37 +286,41 @@ Done when:
 
 Seller-shop:
 
-- Add `POST /chat`.
-- Zod-validate browser request and seller response.
-- Forward to seller with `session_id`, `message`, `choices`, `k`.
-- Return camelCase `quickReplies` to web.
+- ✅ `POST /chat` implemented.
+- ✅ Zod-validates browser request and seller response.
+- ✅ Accepts seller `id_product` game hits and normalizes them to browser `id`.
+- ✅ Forwards `session_id`, `message`, `choices`, `k` plus BFF-built
+  `customer_context`.
+- ✅ Returns camelCase `quickReplies` and buyable recommendation cards to web.
 
 Seller-web:
 
-- Add chat panel with message list, input, quick replies, recommendation cards.
-- Persist `chatSessionId`.
-- Add "add recommendation to cart".
+- ✅ Chat panel with message list, input, quick replies and recommendation cards exists.
+- ✅ Persists `chatSessionId`.
+- ✅ Adds recommendations to cart.
 
 Done when:
 
 - A multi-turn chat works through browser -> BFF -> seller -> BFF -> browser.
 
-### Milestone 4: Purchase-history injection
+### Milestone 4: Commerce context injection
 
 Seller-shop:
 
-- Build `customer_context` from `GET /orders` data internally, not from the browser.
-- Forward owned product ids and recent order summaries to seller.
-- Add tests proving checkout changes the next chat payload.
+- ✅ Builds `customer_context` from commerce state internally, not from the browser.
+- ✅ Forwards `received_products`, `sent_products`, `cart_products`.
+- ✅ Tests prove checkout/cart state changes the next chat payload.
 
 Seller-web:
 
-- Surface the changed advisor behavior after checkout.
+- 🔶 UI can send the chat turn and show recommendations; visible personalization waits
+  for seller to actually consume `customer_context`.
 - Keep the UI simple; the architectural effect is the star.
 
 Done when:
 
-- Buying Azul can affect the next advisor turn in a visible, grounded way.
+- Buying Azul or adding it to cart can affect the next advisor turn in a visible,
+  grounded way.
 
 ### Milestone 5: Showcase finish
 
@@ -296,7 +345,7 @@ All repos:
 - Web never calls `seller` directly.
 - Web never computes prices, line totals, cart totals or order totals.
 - Seller-shop never invents AI behavior; it validates, adapts and composes services.
-- Seller never owns commerce identity or order history; it receives context from the BFF.
+- Seller never owns commerce identity or commerce state; it receives context from the BFF.
 - Contract changes start in seller-shop, then web consumes them.
 - If a field is only for UI display, still document whether it comes from shop-owned data or
   seller-owned data.

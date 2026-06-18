@@ -14,7 +14,7 @@ a Python AI/RAG service:
 - SQLite persistence behind stores/services;
 - tested HTTP behavior and transactional checkout;
 - service-to-service `/chat` and `/search` composition;
-- purchase-history injection that makes the AI advisor visibly personal.
+- commerce-context injection that can make the AI advisor visibly personal.
 
 ## 0. Documentation alignment
 
@@ -23,15 +23,18 @@ a Python AI/RAG service:
 - [x] Document what is implemented versus what is still showcase work.
 - [x] Add this repo-local checklist.
 - [x] Align `PLAN.md` phase language with the portfolio objective.
-- [ ] Add a short "how to review this repo" section once the vertical slice is ready.
+- [x] Add a short "how to review this repo" section once the vertical slice is ready.
 
 ## 1. Contract-first TypeScript loop
 
-- [ ] Make `/docs/json` export stable enough for generated web types.
-- [ ] Add an `openapi:export` script or documented command.
-- [ ] Decide where the generated spec artifact lives, if anywhere.
-- [ ] Coordinate with `seller-web` to remove hand-written DTO mirrors.
-- [ ] Add a CI check that catches accidental OpenAPI drift, if practical.
+- [x] Make `/docs/json` export stable enough for generated web types.
+- [x] Add an `openapi:export` script or documented command.
+- [x] Decide where the generated spec artifact lives, if anywhere: generated locally as
+      ignored `openapi.json`, not committed unless we later need a frozen artifact.
+- [x] Make `X-Customer-Id` the required identity source for customer-scoped routes.
+- [x] Coordinate with `seller-web` to consume generated OpenAPI types instead of
+      hand-written DTO mirrors.
+- [x] Add a contract test that catches accidental OpenAPI route/chat shape drift.
 
 ## 2. Backend quality hardening
 
@@ -50,6 +53,7 @@ a Python AI/RAG service:
 - [x] Add injectable fetch for seller calls.
 - [x] Forward `message`, `choices`, `sessionId` and `k` to `seller`.
 - [x] Validate the seller response before returning it to the browser.
+- [x] Normalize seller `id_product` hits into browser-facing `id` cards.
 - [x] Enrich returned recommendation cards with shop-owned fields when needed.
 - [x] Cover the happy path with a route test.
 - [x] Cover upstream non-2xx responses.
@@ -65,13 +69,14 @@ a Python AI/RAG service:
 - [ ] Validate seller results before returning them.
 - [ ] Keep this route deliberately thin and documented as passthrough.
 
-## 5. Purchase-history injection
+## 5. Commerce context injection
 
-- [x] Build `customer_context` from order history inside the BFF.
-- [x] Include owned product ids.
-- [x] Include recent order summaries with timestamps.
-- [x] Ensure the browser cannot forge purchase history in the chat request.
-- [x] Add tests proving checkout changes the next chat payload.
+- [x] Build `customer_context` from order/cart state inside the BFF.
+- [x] Include received product ids.
+- [x] Include cart product ids.
+- [x] Include sent product ids as an empty state until fulfillment is modeled.
+- [x] Ensure the browser cannot forge commerce context in the chat request.
+- [x] Add tests proving checkout/cart state changes the next chat payload.
 - [ ] Coordinate with `seller` on the exact accepted `customer_context` shape.
 - [ ] Coordinate with `seller-web` on how to surface the before/after effect.
 

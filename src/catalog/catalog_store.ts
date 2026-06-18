@@ -1,5 +1,10 @@
+import { z } from 'zod';
 import type { Database } from '../core/database.js';
 import type { Product, ProductPage } from './product.js';
+
+// Array columns are stored as JSON text; parse them instead of trusting the cast.
+const tagsCodec = z.array(z.string());
+const playersCodec = z.array(z.number().int());
 
 interface ProductRow {
   id: number;
@@ -27,9 +32,9 @@ function toProduct(row: ProductRow): Product {
     id: row.id,
     name: row.name,
     description: row.description,
-    tags: JSON.parse(row.tags) as string[],
+    tags: tagsCodec.parse(JSON.parse(row.tags)),
     authors: row.authors,
-    players: JSON.parse(row.players) as number[],
+    players: playersCodec.parse(JSON.parse(row.players)),
     playersDisplay: row.players_display,
     durationMin: row.duration_min,
     ageMin: row.age_min,

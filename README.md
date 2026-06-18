@@ -1,9 +1,9 @@
 # board-game-shop-api — commerce backend (Node + TypeScript)
 
-> Portfolio slice: a Node + TypeScript commerce BFF for the board-game storefront.
-> The catalog, server-side cart and checkout flow are implemented and tested; the
-> AI-facing `/chat` proxy is in place; the remaining showcase work is real-stack
-> chat verification, seller-side personalization, `/search` and final polish.
+> A Node + TypeScript commerce BFF for the board-game storefront. The catalog,
+> server-side cart and checkout flow are implemented and tested; the AI-facing `/chat`
+> and `/search` proxies are in place. Remaining: real-stack verification with the web
+> app, seller-side personalization and final polish.
 
 The commerce backend of a small board-game e-commerce demo: products, orders,
 customers — and the **BFF** (backend-for-frontend) in front of an AI advisor service.
@@ -17,9 +17,9 @@ It is one of three repositories that together form the storefront system:
 
 ## Why this repo exists
 
-The AI/RAG repo is the main research piece; this service is the deliberately
-production-shaped Node/TypeScript slice around it. Its job is to show that the
-system is not only a model demo:
+The AI/RAG repo is the main research piece; this service is the production-shaped
+Node/TypeScript slice around it. Its job is to show that the system is not only a
+model demo:
 
 - browser traffic enters through a typed BFF, not directly through the AI service;
 - commerce data has a real owner: catalog, prices, carts, orders and history live here;
@@ -36,7 +36,7 @@ AI to the Python service — so service-to-service calls are real, not diagram f
 ```mermaid
 flowchart LR
     WEB[board-game-shop-web<br/>React + TS] -->|only entry point| SHOP[board-game-shop-api<br/>Node + TS · BFF]
-    SHOP -->|/chat now<br/>/search planned| API[board-game-rag-seller<br/>Python · AI/RAG]
+    SHOP -->|/chat + /search| API[board-game-rag-seller<br/>Python · AI/RAG]
     SHOP --> DB[(shop.db<br/>catalog, carts, orders)]
 ```
 
@@ -48,14 +48,15 @@ flowchart LR
 - **Orders & customers** — owned here (`shop.db`, SQLite). Browser requests identify
   the active demo customer through `X-Customer-Id`; persisted rows are keyed by
   `customer_id`.
-- **Chat** — implemented as the first AI-facing BFF slice: the service proxies the AI
-  advisor, validates its response, normalizes seller `id_product` candidates into
-  browser-facing product ids, enriches them with shop-owned data and injects the
-  customer's **commerce context** (`customer_context`). That is where this repo earns
-  its BFF title: cross-session personalization while the AI service stays ignorant of
-  customer identity.
-- **Search** — still a planned thin passthrough to the seller service, with this BFF
-  validating query/facet input and adapting the response for the browser.
+- **Chat** — the first AI-facing BFF route: the service proxies the AI advisor,
+  validates its response, normalizes seller `id_product` candidates into browser-facing
+  product ids, enriches them with shop-owned data and injects the customer's **commerce
+  context** (`customer_context`). This is the BFF's core job: cross-session
+  personalization while the AI service stays ignorant of customer identity.
+- **Search** — a thin faceted passthrough to the seller service: the BFF validates the
+  camelCase query/facet input, maps it 1:1 to seller's snake_case search contract,
+  validates the returned hits and re-grounds each `id_product` into a buyable shop card
+  with shop-owned price.
 
 Database-per-service: this service never reads the AI service's stores, and vice
 versa. Cross-domain needs travel through API calls.
@@ -131,9 +132,8 @@ Owned data:
   timestamps are copied at order time so later catalog changes do not rewrite history.
 
 Demo tradeoffs are explicit: there is no auth, no payment, and no migration system.
-Schema changes are wipe-and-reseed. That keeps the repo focused on the portfolio goal:
-TypeScript contracts, runtime validation, BFF composition and transactional commerce
-behavior.
+Schema changes are wipe-and-reseed. That keeps the focus on TypeScript contracts,
+runtime validation, BFF composition and transactional commerce behavior.
 
 ## Current status
 
@@ -152,15 +152,19 @@ Implemented in this repo:
   response validation and buyable card enrichment from the shop catalog.
 - `customer_context` injection from shop-owned state: received products, sent products
   and cart products are built server-side, not accepted from the browser.
+- `GET /search` faceted passthrough: camelCase facets mapped to seller's search
+  contract, hits validated and re-grounded into buyable shop cards.
+- A single error handler so every non-2xx body matches one `{ error, message }`
+  contract (validation `400`, upstream `502`, opaque `500`).
 - OpenAPI export command and contract tests for the browser-facing route surface.
-- Vitest coverage for config, stores, services and HTTP routes via `fastify.inject`.
+- Vitest coverage for config, stores, services and HTTP routes via `fastify.inject`,
+  with the test suite type-checked under the same strict config as `src`.
 
-Still intentionally open for the showcase:
+Not yet done:
 
 - real-stack verification that `board-game-shop-web` consumes the emitted OpenAPI
   contract cleanly against a running BFF;
 - seller-side use of `customer_context` for grounded personalization;
-- `/search` passthrough to `board-game-rag-seller`;
 - README screenshots/GIF once the chat-to-cart loop exists in the web app.
 
 ## Stack
@@ -174,15 +178,9 @@ Still intentionally open for the showcase:
 | Storage | SQLite (`shop.db`, via `node:sqlite`) | Consistent with the ecosystem; zero native deps; swappable behind a store class |
 | Tests | Vitest + `fastify.inject` | Route behavior tested against the HTTP contract, no live server |
 
-## Showcase plan
-
-- Repo coordination: [docs/cross-repo-showcase-plan.md](docs/cross-repo-showcase-plan.md).
-- This repo's active checklist: [docs/showcase-checklist.md](docs/showcase-checklist.md).
-- Phased roadmap: [PLAN.md](PLAN.md).
-
 ## How to review this repo
 
-For the portfolio read, start from the BFF boundaries:
+Start from the BFF boundaries:
 
 1. Run the quality gates in the Development section.
 2. Inspect the OpenAPI contract at `/docs/json` or with `npm run --silent openapi:print`.

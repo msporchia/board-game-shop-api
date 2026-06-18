@@ -20,8 +20,11 @@ import { HealthRoutes } from '../health/health_routes.js';
 import { OrderRoutes } from '../orders/order_routes.js';
 import { OrderService } from '../orders/order_service.js';
 import { OrderStore } from '../orders/order_store.js';
+import { SearchRoutes } from '../search/search_routes.js';
+import { SearchService } from '../search/search_service.js';
 import { Config } from './config.js';
 import { Database } from './database.js';
+import { registerErrorHandler } from './error_handler.js';
 
 export interface AppFactoryDependencies {
   fetch?: typeof fetch;
@@ -55,6 +58,9 @@ export class AppFactory {
     // zod schemas validate inbound requests and serialize responses.
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
+
+    // One error handler so every non-2xx body matches errorResponseSchema.
+    registerErrorHandler(app);
 
     await app.register(cors, { origin: this.config.corsOrigin });
 
@@ -95,12 +101,18 @@ export class AppFactory {
       orderService,
       this.dependencies.fetch,
     );
+    const searchService = new SearchService(
+      this.config.sellerApiUrl,
+      catalogStore,
+      this.dependencies.fetch,
+    );
 
     new HealthRoutes().register(app);
     new CatalogRoutes(catalogStore).register(app);
     new CartRoutes(cartService).register(app);
     new OrderRoutes(orderService).register(app);
     new ChatRoutes(chatService).register(app);
+    new SearchRoutes(searchService).register(app);
 
     return app;
   }

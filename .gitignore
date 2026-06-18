@@ -4,3 +4,7 @@ coverage/
 .env
 *.db
 openapi.json
+
+# Local-only test data & compose override (never commit)
+data/catalog-500.json
+docker-compose.override.yml

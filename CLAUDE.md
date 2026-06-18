@@ -3,11 +3,9 @@
 ## What this repo is
 
 `board-game-shop-api` — the Node commerce backend and **BFF** of a three-repo
-board-game e-commerce demo. Read `README.md` (role, architecture, stack rationale)
-and `PLAN.md` (phased roadmap; each phase gets a detailed spec in `docs/` when it
-starts). Sibling checkouts: `../seller` (Python AI/RAG service, owns the compose
-stack) and `../seller-web` (React UI). This is a portfolio/showcase project: code
-quality is the product.
+board-game e-commerce demo. Read `README.md` for role, architecture, current status
+and stack rationale. Sibling checkouts: `../seller` (Python AI/RAG service, owns the
+compose stack) and `../seller-web` (React UI). Code quality is the priority here.
 
 ## Code structure convention
 

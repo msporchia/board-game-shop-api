@@ -1,14 +1,11 @@
 import type { CartService } from '../carts/cart_service.js';
 import type { CatalogStore } from '../catalog/catalog_store.js';
+import { UpstreamError } from '../core/upstream_error.js';
 import type { OrderService } from '../orders/order_service.js';
 import { type ChatRequest, type ChatResponse, sellerChatResponseSchema } from './chat.js';
 
-export class ChatUpstreamError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ChatUpstreamError';
-  }
-}
+/** Browser-facing body emitted for any seller-side chat failure. */
+const SELLER_UNUSABLE = 'the AI seller did not return a usable chat response';
 
 type Fetcher = typeof fetch;
 
@@ -46,19 +43,21 @@ export class ChatService {
     });
 
     if (!response.ok) {
-      throw new ChatUpstreamError(`seller chat failed with ${response.status}`);
+      throw new UpstreamError(SELLER_UNUSABLE, {
+        cause: `seller chat failed with ${response.status}`,
+      });
     }
 
     let sellerPayload: unknown;
     try {
       sellerPayload = await response.json();
-    } catch {
-      throw new ChatUpstreamError('seller chat returned invalid json');
+    } catch (cause) {
+      throw new UpstreamError(SELLER_UNUSABLE, { cause });
     }
 
     const sellerReply = sellerChatResponseSchema.safeParse(sellerPayload);
     if (!sellerReply.success) {
-      throw new ChatUpstreamError('seller chat returned an invalid payload');
+      throw new UpstreamError(SELLER_UNUSABLE, { cause: sellerReply.error });
     }
 
     const sellerData = sellerReply.data;
